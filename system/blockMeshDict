@@ -1,0 +1,608 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     | Website:  https://openfoam.org
+    \\  /    A nd           | Version:  11
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// for test case, dimensions in mm
+scale 0.001;
+
+// radial
+rMin 93.75437519983689;
+rMax 266.5889612944039;
+
+// axial
+zMin 21.2;
+zMax 395.0;
+
+// circumferential
+qMax 0.31018679700658136;
+qMin -0.04418430901085042;
+
+// Number of cells
+rCells 30; // radial direction
+zUCells 12; // upstream
+zMCells 15; // middle (each half)
+zDCells 12; // downstream
+qCells 22; // circumferential direction (PER SIDE -- 1/2 of total)
+
+qLE #eval{($qMax + $qMin)/2};
+zLE 141.3841;
+qTE #eval{($qMax + $qMin)/2};
+zTE 214.762;
+qSS #eval{$qLE + 1}; // whether grid is successful or not is super sensitive to this. Oddly values that seem sensible fail!
+zSS 178.07305;
+qPS #eval{$qLE - 1}; // same issue as qPS
+zPS 178.07305;
+
+//- Derived quantities
+//
+// cylindrical system definition: theta (q) = 0 along positive x-axis
+// positive angles moving towards positive y-direction
+// x = r * cos(q)
+// y = r * sin(q)
+// r = sqrt(x^2 + y^2)
+// q = atan2(y,x)
+// This definition means that when looking downstream (down the +ive z-axis),
+// positive theta is CLOCKWISE
+
+xnPerHub #eval{$rMin*cos(degToRad($qMin))};
+ynPerHub #eval{$rMin*sin(degToRad($qMin))};
+
+xpPerHub #eval{$rMin*cos(degToRad($qMax))};
+ypPerHub #eval{$rMin*sin(degToRad($qMax))};
+
+xnPerCas #eval{$rMax*cos(degToRad($qMin))};
+ynPerCas #eval{$rMax*sin(degToRad($qMin))};
+
+xpPerCas #eval{$rMax*cos(degToRad($qMax))};
+ypPerCas #eval{$rMax*sin(degToRad($qMax))};
+
+qMid	#eval{0.5*($qMin + $qMax)};
+
+xmCas #eval{$rMax*cos(degToRad($qMid))};
+ymCas #eval{$rMax*sin(degToRad($qMid))};
+
+xmHub #eval{$rMin*cos(degToRad($qMid))};
+ymHub #eval{$rMin*sin(degToRad($qMid))};
+
+xLEHub #eval{$rMin*cos(degToRad($qLE))};
+yLEHub #eval{$rMin*sin(degToRad($qLE))};
+
+xPSHub #eval{$rMin*cos(degToRad($qPS))}; // "along blade" -- value at the PS point (hub)
+yPSHub #eval{$rMin*sin(degToRad($qPS))};
+
+xSSHub #eval{$rMin*cos(degToRad($qSS))}; // "along blade" -- value at the SS point (hub)
+ySSHub #eval{$rMin*sin(degToRad($qSS))};
+
+xTEHub #eval{$rMin*cos(degToRad($qTE))};
+yTEHub #eval{$rMin*sin(degToRad($qTE))};
+
+xLECas #eval{$rMax*cos(degToRad($qLE))};
+yLECas #eval{$rMax*sin(degToRad($qLE))};
+
+xTECas #eval{$rMax*cos(degToRad($qTE))};
+yTECas #eval{$rMax*sin(degToRad($qTE))};
+
+xPSCas #eval{$rMax*cos(degToRad($qPS))}; // "along blade" -- value at the PS point (casing)
+yPSCas #eval{$rMax*sin(degToRad($qPS))};
+
+xSSCas #eval{$rMax*cos(degToRad($qSS))}; // "along blade" -- value at the SS points (casing)
+ySSCas #eval{$rMax*sin(degToRad($qSS))};
+
+// outlet
+
+xnPerHubO #eval{$rMin*cos(degToRad($qMin))};
+ynPerHubO #eval{$rMin*sin(degToRad($qMin))};
+
+xpPerHubO #eval{$rMin*cos(degToRad($qMax))};
+ypPerHubO #eval{$rMin*sin(degToRad($qMax))};
+
+xnPerCasO #eval{$rMax*cos(degToRad($qMin))};
+ynPerCasO #eval{$rMax*sin(degToRad($qMin))};
+
+xpPerCasO #eval{$rMax*cos(degToRad($qMax))};
+ypPerCasO #eval{$rMax*sin(degToRad($qMax))};
+
+qMidO	#eval{0.5*($qMin + $qMax)};
+
+xmCasO #eval{$rMax*cos(degToRad($qMid))};
+ymCasO #eval{$rMax*sin(degToRad($qMid))};
+
+xmHubO #eval{$rMin*cos(degToRad($qMid))};
+ymHubO #eval{$rMin*sin(degToRad($qMid))};
+
+xLEHubO #eval{$rMin*cos(degToRad($qLE))};
+yLEHubO #eval{$rMin*sin(degToRad($qLE))};
+
+xTEHubO #eval{$rMin*cos(degToRad($qTE))};
+yTEHubO #eval{$rMin*sin(degToRad($qTE))};
+
+xLECasO #eval{$rMax*cos(degToRad($qLE))};
+yLECasO #eval{$rMax*sin(degToRad($qLE))};
+
+xTECasO #eval{$rMax*cos(degToRad($qTE))};
+yTECasO #eval{$rMax*sin(degToRad($qTE))};
+
+geometry
+{
+    bladeqN
+    {
+        type   triSurfaceMesh;
+        file   "pBlade.stl";
+    }
+    bladeqP
+    {
+        type   triSurfaceMesh;
+        file   "sBlade.stl";
+    }
+    casing
+    {
+        type   triSurfaceMesh;
+        file   "Casing.stl";
+    }
+    hub
+    {
+        type   triSurfaceMesh;
+        file   "Hub.stl";
+    }
+    inlet
+    {
+        type   triSurfaceMesh;
+        file   "inlet.stl";
+    }
+    outlet
+    {
+        type   triSurfaceMesh;
+        file   "outlet.stl";
+    }
+    nPer
+    {
+       	type   triSurfaceMesh;
+       	file   "pPeriodic.stl";
+    }
+    middle
+    {
+       	type   triSurfaceMesh;
+       	file   "mPeriodic.stl";
+    }
+    pPer
+    {
+       	type   triSurfaceMesh;
+       	file   "nPeriodic.stl";
+    }
+    LE
+    {
+    	type	triSurfaceMesh;
+    	file 	"LE.stl";
+    }
+    TE
+    {
+    	type	triSurfaceMesh;
+    	file 	"TE.stl";
+    }
+    midChord
+    {
+    	type	triSurfaceMesh;
+    	file 	"midChord.stl";
+    }
+}
+
+vertices
+(
+
+	// x1 = q dir
+	// x2 = axial (z) dir
+	// x3 = radial dir
+
+	// vertices for upstream block on +q side
+	name vIMH project ($xmHub $ymHub $zMin) (hub inlet middle) // inlet plane, mid Q, hub
+	name vIPH project ($xpPerHub $ypPerHub $zMin) (hub inlet pPer) // inlet plane, max Q, hub
+	name vLPH project ($xpPerHub $ypPerHub $zLE) (hub pPer LE) // LE axial loc, max Q, hub
+	name vLMH project ($xLEHub $yLEHub $zLE) (hub middle LE) // LE axial loc, mid Q, hub
+
+	name vIMC project ($xmCas $ymCas $zMin) (casing inlet middle) // inlet plane, mid Q, cas
+	name vIPC project ($xpPerCas $ypPerCas $zMin) (casing inlet pPer) // inlet plane, max Q, cas
+	name vLPC project ($xpPerCas $ypPerCas $zLE) (casing pPer LE) // LE axial loc, max Q, cas
+	name vLMC project ($xLECas $yLECas $zLE) (casing middle LE) // LE axial loc, mid Q, cas
+
+	// vertices for upstream block on -q side
+	name vINH project ($xnPerHub $ynPerHub $zMin) (hub inlet nPer) // inlet plane, min Q, hub
+	// vIMH
+	// vLMH
+	name vLNH project ($xnPerHub $ynPerHub $zLE) (hub nPer LE) // LE axial loc, min Q, hub
+
+	name vINC project ($xnPerCas $ynPerCas $zMin) (casing inlet nPer) // inlet plane, min Q, cas
+	// vIMC
+	// vLMC
+	name vLNC project ($xnPerCas $ynPerCas $zLE) (casing nPer LE) // LE axial loc, min Q, cas
+
+	// vertices for first around-blade block on +q side
+	// vLMH
+	// vLPH
+	name vPPH project ($xpPerHub $ypPerHub $zPS) (hub pPer midChord) // "PS point" axial loc, max Q, hub
+	name vPMH project ($xPSHub $yPSHub $zPS) (hub bladeqP midChord) // "PS point" axial loc, blade PS point Q, hub
+
+	// vLMC
+	// vLPC
+	name vPPC project ($xpPerCas $ypPerCas $zPS) (casing pPer midChord) // "PS point" axial loc, max Q, cas
+	name vPMC project ($xPSCas $yPSCas $zPS) (casing bladeqP midChord) // "PS point" axial loc, blade PS point Q, cas
+
+	// vertices for first around-blade block on -q side
+	// vLNH
+	// vLMH
+	name vSMH project ($xSSHub $ySSHub $zSS) (hub bladeqN midChord) // "SS point" axial loc, blade PS point Q, hub
+	name vSNH project ($xnPerHub $ynPerHub $zPS) (hub nPer midChord) // "SS point" axial loc, min Q, hub
+
+	// vLNC
+	// vLMC
+	name vSMC project ($xSSCas $ySSCas $zSS) (casing bladeqN midChord) // "SS point" axial loc, blade PS point Q, cas
+	name vSNC project ($xnPerCas $ynPerCas $zPS) (casing nPer midChord) // "SS point" axial loc, min Q, cas
+
+	// vertices for second around-blade block on +q side
+	// vPMH
+	// vPPH
+	name vTPH project ($xpPerHub $ypPerHub $zTE) (hub pPer TE) // TE axial loc, max Q, hub
+	name vTMH project ($xTEHub $yTEHub $zTE) (hub middle TE) // TE axial loc, mid Q, hub
+	
+	// vPMC
+	// vPPC
+	name vTPC project ($xpPerCas $ypPerCas $zTE) (casing pPer TE) // TE axial loc, max Q, cas
+	name vTMC project ($xTECas $yTECas $zTE) (casing middle TE) // TE axial loc, mid Q, cas
+
+	// vertices for second around-blade block on -q side
+	// vSNH
+	// vSMH
+	// vTMH
+	name vTNH project ($xnPerHub $ynPerHub $zTE) (hub nPer TE) // TE axial loc, min Q, hub
+
+	// vSNC
+	// vSMC
+	// vTMC
+	name vTNC project ($xnPerCas $ynPerCas $zTE) (casing nPer TE) // TE axial loc, min Q, cas
+
+	// vertices for downstream block on +q side
+	// vTMH
+	// vTPH
+	name vOPH project ($xpPerHub $ypPerHub $zMax) (hub pPer outlet) // outlet plane, max Q, hub
+	name vOMH project ($xmHubO $ymHubO $zMax) (hub outlet middle) // outlet plane, mid Q, hub
+
+	// vTMC
+	// vTPC
+	name vOPC project ($xpPerCas $ypPerCas $zMax) (casing pPer outlet) // outlet plane, max Q, cas
+	name vOMC project ($xmCasO $ymCasO $zMax) (casing outlet middle) // outlet plane, mid Q, cas
+
+	// vertices for downstream block on -q side
+	// vTNH
+	// vTMH
+	// vOMH
+	name vONH project ($xnPerHub $ynPerHub $zMax) (hub nPer outlet) // outlet plane, min Q, hub
+
+	// vTNC
+	// vTMC
+	// vOMC
+	name vONC project ($xnPerCas $ynPerCas $zMax) (casing nPer outlet) // outlet plane, min Q, cas
+	
+);
+
+blocks
+(
+
+    hex (vIMH vIPH vLPH vLMH vIMC vIPC vLPC vLMC) // upstream +q block
+    ($qCells $zUCells $rCells)
+	simpleGrading (1 1 1)
+	
+    hex (vINH vIMH vLMH vLNH vINC vIMC vLMC vLNC) // upstream -q block
+    ($qCells $zUCells $rCells)
+    simpleGrading (1 1 1)
+
+    hex (vLMH vLPH vPPH vPMH vLMC vLPC vPPC vPMC) // first around-blade +q block
+    ($qCells $zMCells $rCells)
+	simpleGrading (1 1 1)
+	
+    hex (vLNH vLMH vSMH vSNH vLNC vLMC vSMC vSNC) // first around-blade -q block
+    ($qCells $zMCells $rCells)
+    simpleGrading (1 1 1)
+
+    hex (vPMH vPPH vTPH vTMH vPMC vPPC vTPC vTMC) // second around-blade +q block
+    ($qCells $zMCells $rCells)
+    simpleGrading (1 1 1)
+   	
+    hex (vSNH vSMH vTMH vTNH vSNC vSMC vTMC vTNC) // second around-blade -q block
+    ($qCells $zMCells $rCells)
+    simpleGrading (1 1 1)
+
+    hex (vTMH vTPH vOPH vOMH vTMC vTPC vOPC vOMC) // downstream +q block
+    ($qCells $zDCells $rCells)
+	simpleGrading (1 1 1)
+	
+    hex (vTNH vTMH vOMH vONH vTNC vTMC vOMC vONC) // downstream -q block
+    ($qCells $zDCells $rCells)
+    simpleGrading (1 1 1)
+
+);
+
+edges
+(
+	// edges of upstream +q block
+    project vIMH vIPH (hub inlet)
+    project vIPH vLPH (hub pPer)
+    project vLPH vLMH (hub LE)
+    project vLMH vIMH (hub middle)
+
+    project vIMC vIPC (casing inlet)
+    project vIPC vLPC (casing pPer)
+    project vLPC vLMC (casing LE)
+    project vLMC vIMC (casing middle)
+    
+    project vIMH vIMC (inlet middle)
+    project vIPH vIPC (inlet pPer)
+    project vLPH vLPC (pPer LE)
+    project vLMH vLMC (middle LE)
+
+    // edges of upstream -q block
+    project vINH vIMH (hub inlet)
+    // vIMH vIMC (covered already)
+    project vLMH vLNH (hub LE)
+    project vLNH vINH (hub nPer)
+
+    project vINC vIMC (casing inlet)
+    // vIMC vLMC (covered already)
+    project vLMC vLNC (casing LE)
+    project vLNC vINC (casing nPer)
+
+    project vINH vINC (nPer inlet)
+    // vIMH vIMC (covered already)
+    // vLMH vLMC (coveverd already)
+    project vLNH vLNC (nPer LE)
+
+	// edges of first around-blade +q block
+    // vLMH vLPH (covered already)
+    project vLPH vPPH (hub pPer)
+    project vPPH vPMH (hub midChord)
+    project vPMH vLMH (hub bladeqP)
+
+    // vLMC vLPC (covered already)
+    project vLPC vPPC (casing pPer)
+    project vPPC vPMC (casing midChord)
+    project vPMC vLMC (casing bladeqP)
+    
+    // vLMH vLMC (covered already)
+    // vLPH vLPC (covered already)
+    project vPPH vPPC (pPer midChord)
+    project vPMH vPMC (bladeqP midChord)
+
+    // edges of first around-blade -q block
+    // vLNH vLMH (covered already)
+    project vLMH vSMH (hub bladeqN)
+    project vSMH vSNH (hub midChord)
+    project vSNH vLNH (hub nPer)
+
+    // vLNC vLMC (covered already)
+    project vLMC vSMC (casing bladeqN)
+    project vSMC vSNC (casing midChord)
+    project vSNC vLNC (casing nPer)
+
+    // vLNH vLNC (covered already)
+    // vLMH vLMC (covered already)
+    project vSMH vSMC (bladeqN midChord)
+    project vSNH vSNC (nPer midChord)
+
+	// edges of second around-blade +q block
+    // vPMH vPPH (covered already)
+    project vPPH vTPH (hub pPer)
+    project vTPH vTMH (hub TE)
+    project vTMH vPMH (hub bladeqP)
+
+    // vPMC vPPC (covered already)
+    project vPPC vTPC (casing pPer)
+    project vTPC vTMC (casing TE)
+    project vTMC vPMC (casing bladeqP)
+    
+    // vPMH vPMC (covered already)
+    // vPPH vPPC (covered already)
+    project vTPH vTPC (pPer TE)
+    project vTMH vTMC (middle TE)
+
+    // edges of second around-blade -q block
+    // vSNH vSMH (covered already)
+    project vSMH vTMH (hub bladeqN)
+    project vTMH vTNH (hub TE)
+    project vTNH vSNH (hub nPer)
+
+    // vSNC vSMC (covered already)
+    project vSMC vTMC (casing bladeqN)
+    project vTMC vTNC (casing TE)
+    project vTNC vSNC (casing nPer)
+
+    // vSNH vSNC (covered already)
+    // vSMH vSMC (covered already)
+    // vTMH vTMC (coveverd already)
+    project vTNH vTNC (nPer TE)
+
+	// edges of downstream +q block
+    // vTMH vTPH (covered already)
+    project vTPH vOPH (hub pPer)
+    project vOPH vOMH (hub outlet)
+    project vOMH vTMH (hub middle)
+
+    // vTMC vTPC (covered already)
+    project vTPC vOPC (casing pPer)
+    project vOPC vOMC (casing outlet)
+    project vOMC vTMC (casing middle)
+    
+    // vTMH vTMC (covered already)
+    // vTPH vTPC (covered already)
+    project vOPH vOPC (pPer outlet)
+    project vOMH vOMC (outlet middle)
+
+    // edges of downstream -q block
+    // vTNH vTMH (covered already)
+    // vTMH vTMC (covered already)
+    project vOMH vONH (hub outlet)
+    project vONH vTNH (hub nPer)
+
+    // vTNC vTMC (covered already)
+    // vTMC vOMC (covered already)
+    project vOMC vONC (casing outlet)
+    project vONC vTNC (casing nPer)
+
+    // vTNH vTNC (covered already)
+    // vTMH vTMC (covered already)
+    // vOMH vOMC (coveverd already)
+    project vONH vONC (nPer outlet)
+
+);
+
+faces
+(
+
+// axial-normal faces
+	project (vIMH vIPH vIPC vIMC) inlet // +q
+    project (vINH vIMH vIMC vINC) inlet // -q
+	project (vLMH vLPH vLPC vLMC) LE // +q
+	project (vLNH vLMH vLMC vLNC) LE // -q
+    project (vPMC vPMH vPPH vPPC) midChord // +q
+    project (vSMC vSMH vSNH vSNC) midChord // -q
+	project (vTMH vTPH vTPC vTMC) TE // +q
+	project (vTNH vTMH vTMC vTNC) TE // -q
+    project (vOMH vOPH vOPC vOMC) outlet // +q
+    project (vONH vOMH vOMC vONC) outlet // -q
+
+// theta-normal(ish) faces
+    project (vIPH vLPH vLPC vIPC) pPer // I-L
+    project (vLPH vPPH vPPC vLPC) pPer // L-P
+    project (vPPH vTPH vTPC vPPC) pPer // P-T
+   project (vTPH vOPH vOPC vTPC) pPer // T-O
+	project (vIMH vLMH vLMC vIMC) middle // I-L
+	project (vLMH vSMH vSMC vLMC) bladeqN // L-S
+	project (vSMH vTMH vTMC vSMC) bladeqN // S-T
+	project (vLMH vPMH vPMC vLMC) bladeqP // L-P
+	project (vPMH vTMH vTMC vPMC) bladeqP // P-T
+	project (vTMH vOMH vOMC vTMC) middle // T-O
+    project (vINH vLNH vLNC vINC) nPer // I-L
+    project (vLNH vSNH vSNC vLNC) nPer // L-S
+    project (vSNH vTNH vTNC vSNC) nPer // S-T
+    project (vTNH vONH vONC vTNC) nPer // T-O
+
+// radial-normal(ish) faces
+    project (vIMH vLMH vLPH vIPH) hub // I-L, q+
+    project (vINH vLNH vLMH vIMH) hub // I-L, q-
+    project (vLMH vPMH vPPH vLPH) hub // L-P
+    project (vPMH vTMH vTPH vPPH) hub // P-T
+    project (vLNH vSNH vSMH vLMH) hub // L-S
+    project (vSNH vTNH vTMH vSMH) hub // S-T
+    project (vTMH vOMH vOPH vTPH) hub // T-O, q+
+    project (vTNH vONH vOMH vTMH) hub // T-O, q-
+    project (vIMC vLMC vLPC vIPC) casing // I-L, q+
+    project (vINC vLNC vLMC vIMC) casing // I-L, q-
+    project (vLMC vPMC vPPC vLPC) casing // L-P
+    project (vPMC vTMC vTPC vPPC) casing // P-T
+    project (vLNC vSNC vSMC vLMC) casing // L-S
+    project (vSNC vTNC vTMC vSMC) casing // S-T
+    project (vTMC vOMC vOPC vTPC) casing // T-O, q+
+    project (vTNC vONC vOMC vTMC) casing // T-O, q-
+);
+
+boundary
+(
+    inlet
+    {
+        type patch;
+        faces
+        (
+            (vIMH vIPH vIPC vIMC)
+            (vINH vIMH vIMC vINC)
+        );
+    }
+
+    outlet
+    {
+        type patch;
+        faces
+        (
+            (vOMH vOPH vOPC vOMC)
+            (vONH vOMH vOMC vONC)
+        );
+    }
+
+    pCyclic
+    {
+        type patch;
+        faces
+        (
+    		(vIPH vLPH vLPC vIPC)
+    		(vLPH vPPH vPPC vLPC)
+    		(vPPH vTPH vTPC vPPC)
+    		(vTPH vOPH vOPC vTPC)
+        );
+    }
+
+    nCyclic
+    {
+        type patch;
+        faces
+        (
+			(vINH vLNH vLNC vINC)
+    		(vLNH vSNH vSNC vLNC)
+    		(vSNH vTNH vTNC vSNC)
+    		(vTNH vONH vONC vTNC)
+        );
+    }
+
+    hub
+    {
+        type wall;
+        faces
+        (
+    		(vIMH vLMH vLPH vIPH)
+	   		(vINH vLNH vLMH vIMH)
+    		(vLMH vPMH vPPH vLPH)
+    		(vPMH vTMH vTPH vPPH)
+    		(vLNH vSNH vSMH vLMH)
+    		(vSNH vTNH vTMH vSMH)
+	   		(vTMH vOMH vOPH vTPH)
+    		(vTNH vONH vOMH vTMH)
+        );
+    }
+
+    casing
+    {
+        type wall;
+        faces
+        (
+			(vIMC vLMC vLPC vIPC)
+    		(vINC vLNC vLMC vIMC)
+    		(vLMC vPMC vPPC vLPC)
+    		(vPMC vTMC vTPC vPPC)
+    		(vLNC vSNC vSMC vLMC)
+    		(vSNC vTNC vTMC vSMC)
+    		(vTMC vOMC vOPC vTPC)
+	    	(vTNC vONC vOMC vTMC)
+        );
+    }
+
+    blade
+    {
+    	type wall;
+    	faces
+    	(
+    		(vLMH vSMH vSMC vLMC)
+    		(vSMH vTMH vTMC vSMC)
+    		(vLMH vPMH vPMC vLMC)
+    		(vPMH vTMH vTMC vPMC)
+    	);
+    }
+
+);
+
+// ************************************************************************* //
