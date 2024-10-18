@@ -2,23 +2,19 @@
 # -*- coding: utf-8 -*-
 
 """
-Updated 7 October 2024
-
-Most recent update: change LE, midchord, and TE surface
-definitions to be based around the further-forward/backward
-axial points, not some kind of "smart" approximation of the
-camber line.
+Updated 2 October 2024
 
 @author: Adekola Adeyemi and Jeff Defoe
 """
 
 # Import packages
 import numpy as np
+import scipy.interpolate as spinterp
 from scipy.interpolate import interp1d
 import model_function as mf  # custom library of functions called
 import TransfiniteInterpolation as tf  # function for transfinite interpolation in here
 import sys
-from scipy.spatial import Delaunay
+from matplotlib import pyplot as plt # for testing
 
 # Set inputs
 nSections = 23  # number of blade sections. Currently assumed to be < 100
@@ -48,8 +44,8 @@ thetaPts = 360  # must yield smaller triangles than desired grid cells in CFD
 # Import data from files
 bladeP = []
 bladeS = []
-LE = np.zeros([nSections, 2])
-TE = np.zeros([nSections, 2])
+LE = np.empty([nSections, 2])
+TE = np.empty([nSections, 2])
 # sections; pressure and suction sides already divided:
 # Note here the P stuff is assigned from the suction surfaces files due to the way
 # the code is structured, naming cleanup needs to be done later
@@ -66,65 +62,23 @@ for a in range(nSections):
         bladeS.append(fileS)
     LE[a] = [fileP[0, 2], fileP[0, 0]]  # meridional locus of LE points (z, r)
     TE[a] = [fileP[len(fileP)-1, 2], fileP[len(fileP)-1, 0]]  # meridional locus of TE points (z,r)
-
-# Now the LE and TE points were obtained.... somehow, but aren't the right values.
-# Redo them. For each section, find the minimum z and that will be the LE; max=TE.
-for a in range(nSections):
-    # Combine PS and SS
-    sectionPts = np.concatenate((bladeP[a], bladeS[a]))
-
-    # Find LE (minimum z)
-    LEindex = sectionPts[:, 2].argmin()
-    # Overwrite LE for this section
-    LE[a] = [sectionPts[LEindex, 2], np.sqrt(sectionPts[LEindex, 0]**2 + sectionPts[LEindex, 1]**2) ]
-
-    # Find TE (maximum z)
-    TEindex = sectionPts[:,2].argmax()
-    # Overwrite TE for this section
-    TE[a] = [sectionPts[TEindex, 2], np.sqrt(sectionPts[TEindex, 0]**2 + sectionPts[TEindex, 1]**2) ]
-
-    # Now we have (z,r) coordinates for the LE and TE that are correct.
-    # Next, need to re-divide the PS and SS based on these points.
-
-    # Is the LE on the SS or PS (in current data)? Fix data definitions.
-    if np.equal(bladeS[a], sectionPts[LEindex, :]).prod(axis=1).max():
-        LEloc = np.where(np.equal(bladeS[a], sectionPts[LEindex, :]).prod(axis=1)==1)
-        bladeSnewThisSection = bladeS[a][int(LEloc[0]):, :]
-        SpointsToMovetoPS = bladeS[a][0:int(LEloc[0])+1:, :]  # includes LE again
-        bladePnewThisSection = np.concatenate((SpointsToMovetoPS[::-1, :], bladeP[a]))
-    elif np.equal(bladeP[a], sectionPts[LEindex, :]).prod(axis=1).max():
-        LEloc = np.where(np.equal(bladeP[a], sectionPts[LEindex, :]).prod(axis=1)==1)
-        bladePnewThisSection = bladeP[a][int(LEloc[0]):, :]  # remove points
-        PpointsToMovetoSS = bladeP[a][0:int(LEloc[0])+1:, :]  # includes LE again
-        bladeSnewThisSection = np.concatenate((PpointsToMovetoSS[::-1, :], bladeS[a]))
-
-    # Is the TE on the SS or PS (in current data)? Fix data definitions.
-        # do this later, for current testing only need LE
-
-    # overwrite data, this works since bladeP/S are lists and each
-    # element can be a differently-sized array
-    bladeP[a] = bladePnewThisSection
-    bladeS[a] = bladeSnewThisSection
-
-# hub and casing curves (extents: desired length of domain):
+# hub and casing curves (extends: desired length of domain):
 hub = np.loadtxt(pathToMeridGeomFiles + '/' + 'sHub.curve')  # these are (r, theta, z)
 cas = np.loadtxt(pathToMeridGeomFiles + '/' + 'sCasing.curve')  # these are (r, theta, z)
 
-# Redo this section on camber. For now make a crude camber approximation by
-# simply taking the average of the SS and PS points at each defined camber
-# z point, since we have defined the LE and TE based on z coordinates
-#
-# Later, make this better by FIRST getting the LE/TE slope/perpendiculars
-# from the unmodified blade shape data, THEN using those directions to define
-# surface directions without worrying about the details of the camber shape.
+# Get number of points per side in sections
+nPtsPerSide = len(bladeS[0])  # Note all sections assumed to be comprised of the same number of points!
 
-nPtsCamber = 100  # will interpolate, so this is an arbitrary number
+# Set up approximate camber surface variables
+allCamber = np.zeros([len(bladeP), nPtsPerSide + 2*N, 3])  # holds full camber surface, for all profiles, from inlet to outlet (Cartesian)
+allBlade = np.zeros([len(bladeP), bladeP[0].shape[0]*2, 3])  # holds blade surface (SS and PS) for all profiles (Cartesian)
+justCamber = np.zeros([len(bladeP), nPtsPerSide, 3])  # holds camber surface from LE to TE for all profiles (Cartesian)
+OUTxyz = np.zeros([len(bladeP), 3])  # outlet curve in Cartesian coordinates
+INxyz = np.zeros([len(bladeP), 3])  # inlet curve in Cartesian coordinates
+camberTheta = np.empty([len(bladeP), nPtsPerSide + 2*N, 1])  # theta coordinates of full camber surface (rad)
 
-allCamber = np.zeros([nSections, nPtsCamber + 2*N, 3])  # holds full camber surface, for all profiles, from inlet to outlet (Cartesian)
-justCamber = np.zeros([nSections, nPtsCamber, 3])  # holds camber surface from LE to TE for all profiles (Cartesian)
-OUTxyz = np.zeros([nSections, 3])  # outlet curve in Cartesian coordinates
-INxyz = np.zeros([nSections, 3])  # inlet curve in Cartesian coordinates
-camberTheta = np.zeros([nSections, nPtsCamber + 2*N, 1])  # theta coordinates of full camber surface (rad)
+pBlade = np.zeros([len(bladeP), bladeP[0].shape[0], 3])  # assemble all PS sections (Cartesian)
+sBlade = np.zeros([len(bladeP), bladeP[0].shape[0], 3])  # assemble all SS sections (Cartesian)
 
 # Get intersecting points between inlet, outlet, hub, and casing
 # (meridonal coordinates (y, r))
@@ -199,69 +153,39 @@ casNDn[0, 1] = TE[i, 1]
 nodesUp = tf.transfinite(hubNUp, casNUp, nIN, LE)
 nodesDn = tf.transfinite(hubNDn, casNDn, TE, nOUT)
 
-LExyz = np.zeros((nSections,3))
-TExyz = np.zeros((nSections,3))
+halfPitch = (360/Nb)*0.5
+
+thetaPtsForLETEmidSurfs = int(np.round(thetaPts/2))  #60  # int(np.round(thetaPts/2))
+
+# Initialize arrays for curvy LE, TE, (and later: midchord)
+leadEdge = np.zeros([2*thetaPtsForLETEmidSurfs-1, len(LE), 3])
+trailEdge = np.zeros([thetaPts, len(TE), 3])
 
 # Loop over profiles
-for i in range(nSections):
+for i in range(len(bladeP)):
+    # Generate approximate camber line between LE and TE
 
-    # Convert blade data to Cylindrical coordinates
+    # Convert Data to Cylindrical coordinates
     PScyl = mf.cart2pol(bladeP[i][:, 0], bladeP[i][:, 1], bladeP[i][:, 2])
     SScyl = mf.cart2pol(bladeS[i][:, 0], bladeS[i][:, 1], bladeS[i][:, 2])
 
-    # Generate an approximate camber line between LE and TE
-    # on each section, using the specified number of nPtsCamber
-    # Interpolate from the SS and PS points to simply take the
-    # r*theta coordinate that's halway between each
-
-    LExyz[i, :] = bladeP[i][0, :]
-    TExyz[i, :] = bladeP[i][-1, :]
-
-    # Convert LE and TE data to cylindrical coordinates (theta, r, z)
-    LEcyl = mf.cart2pol(bladeP[i][0, 0], bladeP[i][0, 1], bladeP[i][0, 2])
-    TEcyl = mf.cart2pol(bladeP[i][-1, 0], bladeP[i][-1, 1], bladeP[i][-1, 2])
-
-    # Convert to (z,r*theta)
-    LEzrq = np.array([LEcyl[2],LEcyl[0]*LEcyl[1]])
-    TEzrq = np.array([TEcyl[2],TEcyl[0]*TEcyl[1]])
-
-    # Make points between in (z,r*theta) coordinates
-    camberInBladePtsz = np.linspace(start=LEzrq[0], stop=TEzrq[0], num=nPtsCamber)
-    # To get the r*theta values, need to interpolate SS and PS data and then
-    # take average:
-    PSzrq = np.array([PScyl[2],PScyl[0]*PScyl[1]])
-    SSzrq = np.array([SScyl[2],SScyl[0]*SScyl[1]])
-    
-    camberInBladePtsrq = 0.5*( np.interp(camberInBladePtsz,PSzrq[0,:],PSzrq[1,:]) + np.interp(camberInBladePtsz,SSzrq[0,:],SSzrq[1,:]) )
-    #camberInBladePtsrq = np.linspace(start=LEzrq[1], stop=TEzrq[1], num=nPtsCamber)
-
-    # Map onto meridional plane -- eventually use transfinite interpolation
-    # to fill in the path each section should take based on the hub and
-    # casing curves and the LE and TE (similar to what's being done
-    # already for the inlet and outlet extensions); then use the r coordinate
-    # at each z to convert (z,r*theta) data to cylindrical (to get theta vals)
-    #
-    # For now, instead, just assume a straight line
-    LEr = LEcyl[1]
-    TEr = TEcyl[1]
-    camberInBladePtsr = np.linspace(start=LEr, stop=TEr, num=nPtsCamber)
-        
-    # Generate approximate camber line between LE and TE
-
-    #r = 0.5*(PScyl[1] + SScyl[1])
-    #theta = 0.5*(PScyl[0] + SScyl[0])
-    #z = 0.5*(PScyl[2] + SScyl[2])
-    #camberLinecyl = np.concatenate((theta, r, z)).reshape((-1, 3), order='F')
-    camberLinecyl = np.array([camberInBladePtsrq / camberInBladePtsr, camberInBladePtsr , camberInBladePtsz]).T
+    r = 0.5*(PScyl[1] + SScyl[1])
+    theta = 0.5*(PScyl[0] + SScyl[0])
+    z = 0.5*(PScyl[2] + SScyl[2])
+    camberLinecyl = np.concatenate((theta, r, z)).reshape((-1, 3), order='F')
 
     # convert data to (z,r*theta)
-    PSzrq = np.zeros([len(bladeP[i]), 2])
+    PSzrq = np.zeros([len(bladeP[0]), 2])
     PSzrq[:, 1] = PScyl[0]*(PScyl[1])
     PSzrq[:, 0] = PScyl[2]
-    SSzrq = np.zeros([len(bladeS[i]), 2])
+    SSzrq = np.zeros([len(bladeS[0]), 2])
     SSzrq[:, 1] = SScyl[0]*SScyl[1]
     SSzrq[:, 0] = SScyl[2]
-    camberLinezrq = np.array([camberInBladePtsz, camberInBladePtsrq]).T
+    LEzrq = PSzrq[0]
+    TEzrq = PSzrq[len(PSzrq)-1]
+    camberLinezrq = np.zeros([len(camberLinecyl), 2])
+    camberLinezrq[:, 1] = theta*r
+    camberLinezrq[:, 0] = z
 
     # Extend camber line to domain region bounds upstream and downstream
     LEslope = (camberLinezrq[1][1] - camberLinezrq[0][1]) / (camberLinezrq[1][0] - camberLinezrq[0][0])
@@ -306,7 +230,7 @@ for i in range(nSections):
     wNew = nodesDn[i::nSections, 1]  # radial coordinates from transfinite interpolation
 
     # cylindrical coordinates (theta, r, z) camber surfaces for extensions
-    camber3DIN = np.array([rqINCurve/rNew, rNew, zNew]).T
+    camber3DIN = np.array([rqINCurve/rNew, rNew, zNew]).T  #[::-1]
     camber3DOUT = np.array([rqOUTCurve/wNew, wNew, vNew]).T
 
     # combine all Camber
@@ -320,14 +244,124 @@ for i in range(nSections):
     allCamber[i, :, :] = medCamber
 
     # combine the blade also
+    blade = np.concatenate(
+        (bladeP[i], bladeS[i][::-1])).reshape((-1, 3), order='F')
+    allBlade[i, :, :] = blade
     onlyCamber = mf.pol2cart(camberLinecyl[:, 0], camberLinecyl[:, 1], camberLinecyl[:, 2])
     onlyCamber = np.array(onlyCamber).T
     justCamber[i, :, :] = onlyCamber
     OUTxyz[i, :] = medCamber[::-1][0]
     INxyz[i, :] = medCamber[0]
 
+    pBlade[i, :, :] = bladeP[i]
+    sBlade[i, :, :] = bladeS[i]
+
+    # OK now that the camber curves are defined on each section,
+    # determine the shape of the LE/TE (maybe later -- midchord?)
+    # curves on this section
+    #
+    # Do this in cylindrical coordinates first (z-rq)
+
+    # LE: relevant variables are LEzrq, LEslope, and perpLEslope
+    # Want a smooth curve -- use cubic spline
+    # Controls are: want perpendicular to camber at periodic bounds
+    # (later change to directly perpendicular to sides since these
+    # may be different), and bisecting camber and direction
+    # perpendicular to camber at LE. A single cubic may be OK:
+    # we are really setting the location and slope at both ends
+    # of the curve (on each side of the extended camber surface).
+    #
+    # But is this enough information to uniquely determine the
+    # curve shape? Two points and two derivative values seem
+    # to be enough to specify a cubic.
+
+    LEangle = np.arctan2(LEslope,1)
+    perpLEangle = np.arctan2(perpLEslope,1)
+    ggg = 0.5  # weighting average factor
+    bisectLEangle = (ggg*LEangle + (1-ggg)*perpLEangle) - np.pi/2
+    bisectDirLEqplus = np.tan(bisectLEangle)
+    LEqp = np.array([LEzrq, LEzrq+(0,np.deg2rad(halfPitch)*LE[i][1])])
+    print("i = {}".format(i))
+    print("LEqp = {}".format(LEqp))
+    #LEqplusSpline = spinterp.CubicSpline(LEqp[:,1],LEqp[:,0],bc_type = 
+    #                    ((1,1/bisectDirLEqplus),(1,1/perpLEslope)))
+    LEqplusSpline = spinterp.CubicSpline(LEqp[:,1],LEqp[:,0],bc_type = 
+                            ((1,1/bisectDirLEqplus),(1,0)))
+
+    plt.plot(zINCurve,rqINCurve,'-r')
+    plt.plot(camberLinezrq[:,0],camberLinezrq[:,1],'--r')
+    plt.plot(SSzrq[:,0],SSzrq[:,1],'m')
+    plt.plot(PSzrq[:,0],PSzrq[:,1],'m')
+    plt.plot([LEzrq[0]-10,LEzrq[0]+10],[LEzrq[1]-10*perpLEslope,LEzrq[1]+10*perpLEslope],'-b')
+
+    #plt.plot(LEqplusSpline(np.linspace(LEqp[0,1],LEqp[1,1],100)),np.linspace(LEqp[0,1],LEqp[1,1],100),'-k')
+
+    # Do the same for the other side of LE
+    hhh = ggg  # weighting average factor
+    bisectLEangle = (hhh*LEangle + (1-hhh)*perpLEangle) - np.pi/2
+    bisectDirLEqminus = np.tan(bisectLEangle)
+    LEqm = np.array([LEzrq-(0,np.deg2rad(halfPitch)*LE[i][1]), LEzrq])
+    print("LEqm = {}".format(LEqp))
+    #LEqminusSpline = spinterp.CubicSpline(LEqm[:,1],LEqm[:,0],bc_type = 
+    #                    ((1,1/perpLEslope),(1,1/bisectDirLEqplus)))
+    LEqminusSpline = spinterp.CubicSpline(LEqm[:,1],LEqm[:,0],bc_type = 
+                            ((1,0),(1,1/bisectDirLEqminus))) # change to tangential direction at bound
+
+    #plt.plot(LEqminusSpline(np.linspace(LEqm[0,1],LEqm[1,1],100)),np.linspace(LEqm[0,1],LEqm[1,1],100),'-k')
+
+    # Fill array for LE           leadEdge = np.zeros([thetaPts, len(LE), 3])
+    rqpPts = np.linspace(LEqp[0, 1], LEqp[1, 1], thetaPtsForLETEmidSurfs)
+    zpPts = LEqplusSpline(rqpPts)
+    rqmPts = np.linspace(LEqm[0, 1], LEqm[1, 1], thetaPtsForLETEmidSurfs)
+    zmPts = LEqminusSpline(rqmPts)
+    # since z is varying, need to get local r values in order to convert to theta coordinates
+    # For this purpose, use the combined camber curve (camber -- theta, r, z)
+    # y1 = np.interp(x1,x,y)
+#    if i == 0:
+#        rpPts = np.interp(zpPts, hub[:,2], hub[:,0])
+#        rmPts = np.interp(zmPts, hub[:,2], hub[:,0])
+#    elif i == (nSections-1):
+#        rpPts = np.interp(zpPts, cas[:,2], cas[:,0])
+#        rmPts = np.interp(zmPts, cas[:,2], cas[:,0])
+#    else:
+#        rpPts = np.interp(zpPts, camber[:,2], camber[:,1])
+#        rmPts = np.interp(zmPts, camber[:,2], camber[:,1])
+    rpPts = np.interp(zpPts, camber[:,2], camber[:,1])
+    rmPts = np.interp(zmPts, camber[:,2], camber[:,1])
+
+    qpPts = rqpPts / rpPts
+    qmPts = rqmPts / rmPts
+
+    # combine data
+    zPts = np.concatenate((zmPts, zpPts))
+    rPts = np.concatenate((rmPts, rpPts))
+    qPts = np.concatenate((qmPts, qpPts))
+
+    # remove duplicate centre point
+    qunique, qindices = np.unique(qPts, return_index=True)
+    # handle case where "duplicate" values are not EXACTLY the same
+    if len(qunique) == len(qPts):
+        print('No unique points, removing points that are almost the same...')
+        relTol = 0.01 * np.abs(np.diff(qunique)).mean()  # find a critical tolerance
+        qBool = np.diff(qunique) < relTol  # true where the two elements are almost the same
+        qindices = np.delete(qindices, qBool.nonzero())
+        qunique = qunique[qindices]
+
+    runique = rPts[qindices]
+    zunique = zPts[qindices]
+
+    plt.plot(zunique,qunique*runique,'-k')
+    ax = plt.gca()
+    ax.set_aspect('equal', adjustable='box')
+    plt.savefig('test_{}.pdf'.format(i),bbox_inches='tight')
+    plt.clf()
+
+    LEuniquePtsxyz = np.array(mf.pol2cart(qunique, runique, zunique)).T
+    leadEdge[:, i, :] = LEuniquePtsxyz
+    
+#sys.exit() # stop code here, don't want to bother with the rest until the above is working
+
 # Now rotate the camber surface to create the passage boundaries
-halfPitch = (360/Nb)*0.5
 
 pCamber = np.zeros(allCamber.shape)
 nCamber = np.zeros(allCamber.shape)
@@ -344,20 +378,10 @@ for j in range(len(allCamber)):
         allCamber[j][:, 2], allCamber[j][:, 1], allCamber[j][:, 0], -1*np.deg2rad(halfPitch))).T
     nCamber[j][:, [0, 1, 2]] = nCamber[j][:, [2, 1, 0]]
 
-# Find in and max theta values for p/n camber
-minq = np.min((np.array(mf.cart2pol(pCamber[:,:,0], pCamber[:,:,1], pCamber[:,:,2]))[0,:,:].min(), 
-            np.array(mf.cart2pol(nCamber[:,:,0], nCamber[:,:,1], nCamber[:,:,2]))[0,:,:].min()))
-maxq = np.max((np.array(mf.cart2pol(pCamber[:,:,0], pCamber[:,:,1], pCamber[:,:,2]))[0,:,:].max(), 
-            np.array(mf.cart2pol(nCamber[:,:,0], nCamber[:,:,1], nCamber[:,:,2]))[0,:,:].max()))
-offset = maxq - minq - 2*(np.pi/180)*halfPitch
-
 # Initialize arrays for some surfaces
-#Angle = np.linspace(minq, maxq, thetaPts)
-Angle = np.linspace(-2*halfPitch*np.pi/180-offset, 2*halfPitch*np.pi/180+offset, thetaPts)
+Angle = np.linspace(0, 2*np.pi, thetaPts)
 outlet = np.zeros([thetaPts, nSections, 3])
 inlet = np.zeros([thetaPts, nSections, 3])
-leadEdge = np.zeros([thetaPts, nSections, 3])
-trailEdge = np.zeros([thetaPts, nSections, 3])
 hubS = np.zeros([thetaPts, len(hub), 3])
 casing = np.zeros([thetaPts, len(cas), 3])
 
@@ -367,14 +391,12 @@ for b in range(thetaPts):
         OUTxyz[:, 2], OUTxyz[:, 1], OUTxyz[:, 0], Angle[b])).T
     inlet[b, :, :] = np.array(mf.vectorRot3D(
         INxyz[:, 2], INxyz[:, 1], INxyz[:, 0], Angle[b])).T
-    leadEdge[b, :, :] = np.array(mf.vectorRot3D(
-        LExyz[:, 2], LExyz[:, 1], LExyz[:,0], Angle[b])).T
-    trailEdge[b, :, :] = np.array(mf.vectorRot3D(
-        TExyz[:, 2], TExyz[:, 1], TExyz[:,0], Angle[b])).T
     hubS[b, :, :] = np.array(mf.vectorRot3D(
         hub[:, 2], hub[:, 1], hub[:, 0], Angle[b])).T
     casing[b, :, :] = np.array(mf.vectorRot3D(
         cas[:, 2], cas[:, 1], cas[:, 0], Angle[b])).T
+    trailEdge[b, :, :] = np.array(mf.vectorRot3D(
+            TE[:, 0], TE[:, 1], np.zeros(TE[:,1].shape), Angle[b])).T
 
 # Get 50% axial chord surface data
 halfCamber = np.zeros([nSections, 3])
@@ -392,9 +414,9 @@ for d in range(thetaPts):
 # Create surfaces used for projection of the template mesh
 # Parameters are numbers of points, none of these are new,
 # independent parameters
-Nz = nSections
+Nz = len(bladeP)
 Nr = len(camber)
-#Nrb = len(PScyl[0])
+Nrb = len(PScyl[0])
 Nle = len(LE)
 Nh = len(hub)
 Nc = len(cas)
@@ -411,9 +433,17 @@ Xn = np.zeros([Nz, Nr])  # nPeriodic
 Yn = np.zeros([Nz, Nr])
 Zn = np.zeros([Nz, Nr])
 
-XLE = np.zeros([thetaPts, Nle])  # Blade LE
-YLE = np.zeros([thetaPts, Nle])
-ZLE = np.zeros([thetaPts, Nle])
+XBp = np.zeros([Nz, Nrb])  # Blade Pressure Side
+YBp = np.zeros([Nz, Nrb])
+ZBp = np.zeros([Nz, Nrb])
+
+XBs = np.zeros([Nz, Nrb])  # Blade Sunction Side
+YBs = np.zeros([Nz, Nrb])
+ZBs = np.zeros([Nz, Nrb])
+
+XLE = np.zeros([thetaPts-1, Nle])  # Blade LE
+YLE = np.zeros([thetaPts-1, Nle])
+ZLE = np.zeros([thetaPts-1, Nle])
 
 XTE = np.zeros([thetaPts, Nle])  # Blade TE
 YTE = np.zeros([thetaPts, Nle])
@@ -439,23 +469,6 @@ Xc = np.zeros([thetaPts, Nc])  # Casing
 Yc = np.zeros([thetaPts, Nc])
 Zc = np.zeros([thetaPts, Nc])
 
-# Set up and fill arrays for blades. These are trickier since they have different
-# numbers of points on each side AND that division is different at every section.
-# Fix this by using lists containing numpy arrays, just like the initial data is
-
-#XBp = np.zeros([Nz, Nrb])  # Blade Pressure Side
-#YBp = np.zeros([Nz, Nrb])
-#ZBp = np.zeros([Nz, Nrb])
-XBp = []
-YBp = []
-ZBp = []
-#XBs = np.zeros([Nz, Nrb])  # Blade Sunction Side
-#YBs = np.zeros([Nz, Nrb])
-#ZBs = np.zeros([Nz, Nrb])
-XBs = []
-YBs = []
-ZBs = []
-
 # Fill the arrays
 for k in range(Nz):
     for l in range(Nr):
@@ -468,13 +481,13 @@ for k in range(Nz):
         Xn[k, l] = nCamber[k][l, 0]
         Yn[k, l] = nCamber[k][l, 1]
         Zn[k, l] = nCamber[k][l, 2]
-    # Blades:
-    XBp.append(bladeP[k][:, 0])
-    YBp.append(bladeP[k][:, 1])
-    ZBp.append(bladeP[k][:, 2])
-    XBs.append(bladeS[k][:, 0])
-    YBs.append(bladeS[k][:, 1])
-    ZBs.append(bladeS[k][:, 2])
+    for m in range(Nrb):
+        XBp[k, m] = pBlade[k][m, 0]
+        YBp[k, m] = pBlade[k][m, 1]
+        ZBp[k, m] = pBlade[k][m, 2]
+        XBs[k, m] = sBlade[k][m, 0]
+        YBs[k, m] = sBlade[k][m, 1]
+        ZBs[k, m] = sBlade[k][m, 2]
 for c in range(thetaPts):
     for d in range(Nz):
         Xin[c, d] = inlet[c][d, 2]
@@ -487,9 +500,9 @@ for c in range(thetaPts):
         Ymid[c, d] = midChord[c][d, 1]
         Zmid[c, d] = midChord[c][d, 0]
     for e in range(Nle):
-        XLE[c, e] = leadEdge[c][e, 2]
-        YLE[c, e] = leadEdge[c][e, 1]
-        ZLE[c, e] = leadEdge[c][e, 0]
+#        XLE[c, e] = leadEdge[c][e, 2]
+#        YLE[c, e] = leadEdge[c][e, 1]
+#        ZLE[c, e] = leadEdge[c][e, 0]
         XTE[c, e] = trailEdge[c][e, 2]
         YTE[c, e] = trailEdge[c][e, 1]
         ZTE[c, e] = trailEdge[c][e, 0]
@@ -502,128 +515,68 @@ for c in range(thetaPts):
         Yc[c, q] = casing[c][q, 1]
         Zc[c, q] = casing[c][q, 0]
 
+# Added for new way of doing LE
+for c in range(2*thetaPtsForLETEmidSurfs-1):
+    for e in range(Nle):
+        XLE[c, e] = leadEdge[c][e, 0]
+        YLE[c, e] = leadEdge[c][e, 1]
+        ZLE[c, e] = leadEdge[c][e, 2]
+
 # Set up STL filenames
 filenames = ['mPeriodic','nPeriodic','pPeriodic','pBlade','sBlade','LE','TE','inlet','outlet','Casing','Hub','midChord']
 Xvalues = [Xm, Xn, Xp, XBp, XBs, XLE, XTE, Xin, Xout, Xc, Xh, Xmid]
 Yvalues = [Ym, Yn, Yp, YBp, YBs, YLE, YTE, Yin, Yout, Yc, Yh, Ymid]
 Zvalues = [Zm, Zn, Zp, ZBp, ZBs, ZLE, ZTE, Zin, Zout, Zc, Zh, Zmid]
 
-def unitVector(file, p1, p2, p3):
-    # VECTORS TANGENT TO FACET
-    vector1 = p3 - p2
-    vector2 = p3 - p1
-
-    normalVec = np.cross(vector1, vector2)
-    magnitude = np.linalg.norm(normalVec)
-    unitVec = normalVec / magnitude
-    file.write(f'facet normal {unitVec[0]:.12e} {unitVec[1]:.12e} {unitVec[2]:.12e} \n'
-               f'outer loop \n'
-               f'vertex {p1[0]:.12e} {p1[1]:.12e} {p1[2]:.12e} \n'
-               f'vertex {p2[0]:.12e} {p2[1]:.12e} {p2[2]:.12e} \n'
-               f'vertex {p3[0]:.12e} {p3[1]:.12e} {p3[2]:.12e} \n'
-               f'endloop \n'
-               f'endfacet \n')
-    return
-
 # Create STLs and write them to disk
 for qq in range(len(Xvalues)):
-
     filename = pathForSTLs + '/{}.stl'.format(filenames[qq])
+    rows = Zvalues[qq].shape[0]  # Use Z because it is the axis of rotation
+    columns = Zvalues[qq].shape[1]
+    X = Xvalues[qq]
+    Y = Yvalues[qq]
+    Z = Zvalues[qq]
 
     numFacets = 0
 
     file = open(filename, 'w')
-    file.write('solid ' + filenames[qq]  + ' \n')  # name solids so STLs could be combined if desired
+    file.write('solid \n')
 
-    if not (qq == 3 or qq == 4):
-        # all but blades
-        rows = Zvalues[qq].shape[0]  # Use Z because it is the axis of rotation
-        columns = Zvalues[qq].shape[1]
-        X = Xvalues[qq]
-        Y = Yvalues[qq]
-        Z = Zvalues[qq]
+    def unitVector(file, p1, p2, p3):
+        # VECTORS TANGENT TO FACET
+        vector1 = p3 - p2
+        vector2 = p3 - p1
 
-        for i in range(rows - 1):
-            for j in range(columns - 1):
-                # FACET A VERTICES
-                p1 = np.asarray([X[i, j], Y[i, j], Z[i, j]])
-                p2 = np.asarray([X[i, j+1], Y[i, j+1], Z[i, j+1]])
-                p3 = np.asarray([X[i+1, j+1], Y[i+1, j+1], Z[i+1, j+1]])
-        
-                unitVector(file, p1, p2, p3)
-        
-                p1 = np.asarray([X[i+1, j+1], Y[i+1, j+1], Z[i+1, j+1]])
-                p2 = np.asarray([X[i+1, j], Y[i+1, j], Z[i+1, j]])
-                p3 = np.asarray([X[i, j], Y[i, j], Z[i, j]])
-        
-                unitVector(file, p1, p2, p3)
-        
-                numFacets += 2
-
-    elif (qq == 3 or qq == 4):
-        # blade surfaces only
-        # Here, since the points are not in "neat" rows and columns,
-        # instead try to do a Delaunay triangulation on the data in
-        # (r,z) (meridional) plane and then add 3rd coordinate for
-        # theta points
-#        X = np.concatenate(Xvalues[qq][0:nSections], axis=0)
-#        Y = np.concatenate(Yvalues[qq][0:nSections], axis=0)
-#        Z = np.concatenate(Zvalues[qq][0:nSections], axis=0)
-#        R = np.sqrt(X ** 2 + Y ** 2)
-
-        # OK here's an alternative. Construct triangulations only between
-        # adjacent sections at a time, in the meridional plane, then put
-        # them together.
-
-        for i in range(nSections-1):
-            X = np.concatenate(Xvalues[qq][i:i+2], axis=0)
-            Y = np.concatenate(Yvalues[qq][i:i+2], axis=0)
-            Z = np.concatenate(Zvalues[qq][i:i+2], axis=0)
-            R = np.sqrt(X ** 2 + Y ** 2)
-
-            # Now map onto a rectangle:
-
-            Z1 = Zvalues[qq][i]
-            Z2 = Zvalues[qq][i+1]
-            R1 = np.sqrt(Xvalues[qq][i] ** 2 + Yvalues[qq][i] ** 2)
-            R2 = np.sqrt(Xvalues[qq][i+1] ** 2 + Yvalues[qq][i+1] ** 2)
-
-            dS1 = np.linalg.norm(np.diff(np.array([Z1, R1])),axis=0)
-            dS2 = np.linalg.norm(np.diff(np.array([Z2, R2])),axis=0)
-
-            S1 = dS1.sum()
-            S2 = dS2.sum()
-
-            nS1 = dS1.cumsum() / S1
-            nS2 = dS2.cumsum() / S2
-
-            nS = np.concatenate((np.concatenate((np.array([0]),nS1)),np.concatenate((np.array([0]),nS2))))
-
-            nR1 = np.zeros(R1.shape)
-            nR2 = np.ones(R2.shape)
-
-            nR = np.concatenate((nR1,nR2))
-
-            DT = Delaunay(np.array([nS, nR]).T)
-                # OK this idea seems to have worked! The only strange thing
-                # is that right at the LE, while my two blade side surface
-                # touch perfectly with no gaps or overlaps, for some reason
-                # that contact location is not exactly where the LE surface is!
-
-            triangles = DT.simplices.shape[0]  # number of triangles
-
-            for j in range(triangles):
-                # for every triangle, extract the 3 vertex coordinates
-                # and then write in the same way as for the other surfaces
-
-                p1 = np.array([X[DT.simplices[j,0]], Y[DT.simplices[j,0]], Z[DT.simplices[j,0]]])
-                p2 = np.array([X[DT.simplices[j,1]], Y[DT.simplices[j,1]], Z[DT.simplices[j,1]]])
-                p3 = np.array([X[DT.simplices[j,2]], Y[DT.simplices[j,2]], Z[DT.simplices[j,2]]])
-
-                unitVector(file, p1, p2, p3)
-                numFacets += 1
-        
-    file.write('endsolid \n')
+        normalVec = np.cross(vector1, vector2)
+        magnitude = np.linalg.norm(normalVec)
+        unitVec = normalVec / magnitude
+        file.write(f'facet normal {unitVec[0]} {unitVec[1]} {unitVec[2]} \n'
+                   f'outer loop \n'
+                   f'vertex {p1[0]} {p1[1]} {p1[2]} \n'
+                   f'vertex {p2[0]} {p2[1]} {p2[2]} \n'
+                   f'vertex {p3[0]} {p3[1]} {p3[2]} \n'
+                   f'endloop \n'
+                   f'endfacet \n')
+        return
+    
+    for i in range(rows - 1):
+        for j in range(columns - 1):
+            # FACET A VERTICES
+            p1 = np.asarray([X[i, j], Y[i, j], Z[i, j]])
+            p2 = np.asarray([X[i, j+1], Y[i, j+1], Z[i, j+1]])
+            p3 = np.asarray([X[i+1, j+1], Y[i+1, j+1], Z[i+1, j+1]])
+    
+            unitVector(file, p1, p2, p3)
+    
+            p1 = np.asarray([X[i+1, j+1], Y[i+1, j+1], Z[i+1, j+1]])
+            p2 = np.asarray([X[i+1, j], Y[i+1, j], Z[i+1, j]])
+            p3 = np.asarray([X[i, j], Y[i, j], Z[i, j]])
+    
+            unitVector(file, p1, p2, p3)
+    
+            numFacets += 2
+    
+    file.write('endsolid')
     file.close()
 
 # Generate input file for Bash script which modifies blockMeshDict to be compatible with the geometry
