@@ -1,0 +1,6 @@
+VKI turbine
+From:
+
+Cicatelli, G., and Sieverding, C. H. (October 1, 1997). "The Effect of Vortex Shedding on the Unsteady Pressure Distribution Around the Trailing Edge of a Turbine Blade." ASME. J. Turbomach. October 1997; 119(4): 810–819. https://doi.org/10.1115/1.2841192
+
+Assumed hub to tip ratio of 0.8 and 29 blades, constant hub and casing radii.
