@@ -7,8 +7,8 @@ while read line; do
 	echo ' '
 
 	lineToken=$(echo $line | cut -f1 -d ' ')
-	lineValue=$(echo $line | cut -f2 -d ' ')
-
+	lineValue=$(echo $line | cut -f1 -d ' ' --complement)
+	
 	echo 'token:'
 	echo $lineToken
 	echo 'value:'
@@ -17,4 +17,4 @@ while read line; do
 
 	sed -i "/^${lineToken}/ s/${lineToken} .*/${lineToken} ${lineValue}/" system/blockMeshDict
 
-done <system/passageGeometry
+done <system/passageParameters
