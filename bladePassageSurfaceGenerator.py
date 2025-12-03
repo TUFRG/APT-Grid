@@ -1609,7 +1609,7 @@ def format_coord(name, arr):
 
 
 #%% Write out input file 
-def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, additionalTangentialRefine, additionalAxialRefine):
+def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, additionalTangentialRefine, additionalAxialRefine, highHub1, lowHub1, highCas1, lowCas1, highHub2, lowHub2, highCas2, lowCas2):
     """ compute and write all passage-specific parameters to file
     to be parsed by a Bash script to modify dictionaries prior to
     generating the mesh using blockMesh (OpenFOAM tool)"""
@@ -1845,16 +1845,15 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
 
     # axial grading ratios and cell split for offsets
 
-    # NOTE hack for now: read in files Adekola's code produces
-    BtoOarcLengthMap2HP = np.loadtxt('highHub1.txt', delimiter=',')
-    BtoOarcLengthMap2HN = np.loadtxt('lowHub1.txt', delimiter=',')
-    BtoOarcLengthMap2CP = np.loadtxt('highCas1.txt', delimiter=',')
-    BtoOarcLengthMap2CN = np.loadtxt('lowCas1.txt', delimiter=',')
+    BtoOarcLengthMap2HP = highHub1
+    BtoOarcLengthMap2HN = lowHub1
+    BtoOarcLengthMap2CP = highCas1
+    BtoOarcLengthMap2CN = lowCas1
 
-    BtoOarcLengthMap3HP = np.loadtxt('highHub2.txt', delimiter=',')
-    BtoOarcLengthMap3HN = np.loadtxt('lowHub2.txt', delimiter=',')
-    BtoOarcLengthMap3CP = np.loadtxt('highCas2.txt', delimiter=',')
-    BtoOarcLengthMap3CN = np.loadtxt('lowCas2.txt', delimiter=',')
+    BtoOarcLengthMap3HP = highHub2
+    BtoOarcLengthMap3HN = lowHub2
+    BtoOarcLengthMap3CP = highCas2
+    BtoOarcLengthMap3CN = lowCas2
 
     # Interpolate mapped edge fractions
     pointFracsOffset2HP = np.interp(pointFracsBlade2HP, BtoOarcLengthMap2HP[:,0], BtoOarcLengthMap2HP[:,1])

@@ -123,6 +123,15 @@ casing = np.loadtxt(dataPath + '/casing.txt', delimiter=',')
 
 # FUNCTION DEFINITIONS
 
+def cutArcLenMaps(arr, lower_bound=0.0, upper_bound=1.0):
+    firstRow = arr[0:1]
+    lastRow = arr[-1:]
+    middleRows = arr[1:-1]
+    mask = (middleRows[:, 0] >= lower_bound) & (middleRows[:, 0] <= upper_bound)
+    filteredMiddle = middleRows[mask]
+    return np.concatenate((firstRow, filteredMiddle, lastRow))
+
+
 def angles_between_points(p1, p2, p3):
     """
     Calculates the angles (in radians) subtended by p1 and p2
@@ -1925,12 +1934,20 @@ for m in range(newNsection):
         #This metric I am using will change later one but choose based on 4% for now!      
         percentLowH1 = np.array([(lowHub1OffsetPtAngle1 < 90),(lowHub1OffsetPtAngle2 < 90)])*percentVal
         lowHub1 = curveFrac(bladeL1Pt, offsetOrigL1Pt, lowHub1OffsetPt, percentLowH1).T
+        lowHub1[0,1] = 0.0
+        lowHub1 = cutArcLenMaps(lowHub1, lower_bound=percentValNonCut, upper_bound=1.0)
         percentLowH2 = np.array([(lowHub2OffsetPtAngle1 < 90),(lowHub2OffsetPtAngle2 < 90)])*percentVal
         lowHub2 = curveFrac(bladeL2Pt, offsetOrigL2Pt, lowHub2OffsetPt, percentLowH2).T
+        lowHub2[0,1] = 0.0
+        lowHub2 = cutArcLenMaps(lowHub2, lower_bound=0.0, upper_bound=1.0-percentValNonCut)
         percentHighH1 = np.array([(highHub1OffsetPtAngle1 < 90),(highHub1OffsetPtAngle2 < 90)])*percentVal
         highHub1 = curveFrac(bladeH1Pt, offsetOrigH1Pt, highHub1OffsetPt, percentHighH1).T
+        highHub1[0,1] = 0.0
+        highHub1 = cutArcLenMaps(highHub1, lower_bound=percentValNonCut, upper_bound=1.0)
         percentHighH2 = np.array([(highHub2OffsetPtAngle1 < 90),(highHub2OffsetPtAngle2 < 90)])*percentVal
         highHub2 = curveFrac(bladeH2Pt, offsetOrigH2Pt, highHub2OffsetPt, percentHighH2).T
+        highHub2[0,1] = 0.0
+        highHub2 = cutArcLenMaps(highHub2, lower_bound=0.0, upper_bound=1.0-percentValNonCut)
        
     elif i == newNsection - 1:
         mBladeH1 = cosineSpace(bladeRes+1, blade1SS2D[i][0,0], ssInterX[0]) #upstream portion of the high theta blade
@@ -2012,24 +2029,31 @@ for m in range(newNsection):
         
         percentLowH1 = np.array([(lowCas1OffsetPtAngle1 < 90),(lowCas1OffsetPtAngle2 < 90)])*percentVal
         lowCas1 = curveFrac(bladeL1Pt, offsetOrigL1Pt, lowCas1OffsetPt, percentLowH1).T
+        lowCas1[0,1] = 0.0
+        lowCas1 = cutArcLenMaps(lowCas1, lower_bound=percentValNonCut, upper_bound=1.0)
         percentLowH2 = np.array([(lowCas2OffsetPtAngle1 < 90),(lowCas2OffsetPtAngle2 < 90)])*percentVal
         lowCas2 = curveFrac(bladeL2Pt, offsetOrigL2Pt, lowCas2OffsetPt, percentLowH2).T
+        lowCas2[0,1] = 0.0
+        lowCas2 = cutArcLenMaps(lowCas2, lower_bound=0.0, upper_bound=1.0-percentValNonCut)
         percentHighH1 = np.array([(highCas1OffsetPtAngle1 < 90),(highCas1OffsetPtAngle2 < 90)])*percentVal
         highCas1 = curveFrac(bladeH1Pt, offsetOrigH1Pt, highCas1OffsetPt, percentHighH1).T
+        highCas1[0,1] = 0.0
+        highCas1 = cutArcLenMaps(highCas1, lower_bound=percentValNonCut, upper_bound=1.0)
         percentHighH2 = np.array([(highCas2OffsetPtAngle1 < 90),(highCas2OffsetPtAngle2 < 90)])*percentVal
         highCas2 = curveFrac(bladeH2Pt, offsetOrigH2Pt, highCas2OffsetPt, percentHighH2).T       
-         
+        highCas2[0,1] = 0.0 
+        highCas2 = cutArcLenMaps(highCas2, lower_bound=0.0, upper_bound=1.0-percentValNonCut)
 
 #%%
-np.savetxt(dataPath + '/lowHub1.txt', lowHub1, delimiter=',')
-np.savetxt(dataPath + '/lowHub2.txt', lowHub2, delimiter=',')
-np.savetxt(dataPath + '/lowCas1.txt', lowCas1, delimiter=',')
-np.savetxt(dataPath + '/lowCas2.txt', lowCas2, delimiter=',')
+#np.savetxt(dataPath + '/lowHub1.txt', lowHub1, delimiter=',')
+#np.savetxt(dataPath + '/lowHub2.txt', lowHub2, delimiter=',')
+#np.savetxt(dataPath + '/lowCas1.txt', lowCas1, delimiter=',')
+#np.savetxt(dataPath + '/lowCas2.txt', lowCas2, delimiter=',')
 
-np.savetxt(dataPath + '/highHub1.txt', highHub1, delimiter=',')
-np.savetxt(dataPath + '/highHub2.txt', highHub2, delimiter=',')
-np.savetxt(dataPath + '/highCas1.txt', highCas1, delimiter=',')
-np.savetxt(dataPath + '/highCas2.txt', highCas2, delimiter=',')
+#np.savetxt(dataPath + '/highHub1.txt', highHub1, delimiter=',')
+#np.savetxt(dataPath + '/highHub2.txt', highHub2, delimiter=',')
+#np.savetxt(dataPath + '/highCas1.txt', highCas1, delimiter=',')
+#np.savetxt(dataPath + '/highCas2.txt', highCas2, delimiter=',')
 
 #%% Now I have to convert back to Cylindrical coordinate 
 #Basically I combined the upstream and bladesection and downstream meridional profiles together. 
@@ -2260,6 +2284,7 @@ for q in range(newNsection):
     offBladeDw2Cyl[q,-1] = TECurveCyl[q,-1]  # cross-pasage ellipses are indexed from high theta to low theta
 
     # Just for visualization (can ignore):
+    """
     tangentLine1LECyl[q,:,0] = tangentLine1LEPol[q,:,1]
     tangentLine1LECyl[q,:,1] = funcR(tangentLine1LEPol[q,:,0])
     tangentLine1LECyl[q,:,2] = tangentLine1LEPol[q,:,0]
@@ -2296,7 +2321,7 @@ for q in range(newNsection):
     downstreamExtnCamber2Cyl[q,:,0] = downstreamExtnCamber2Pol[q,:,1]
     downstreamExtnCamber2Cyl[q,:,1] = funcR(downstreamExtnCamber2Pol[q,:,0])
     downstreamExtnCamber2Cyl[q,:,2] = downstreamExtnCamber2Pol[q,:,0]    
-
+    """
 
     # high-theta offset
     offsetBlade1Cyl[q,:,2] = offsetBlade1Pol[q,:,0]
@@ -3155,4 +3180,4 @@ for qq in range(len(Xvalues)):
     
     print(f'Number of Facets = {numFacets} \n')
 
-bpsg.calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, additionalTangentialRefine, additionalAxialRefine)
+bpsg.calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, additionalTangentialRefine, additionalAxialRefine, highHub1, lowHub1, highCas1, lowCas1, highHub2, lowHub2, highCas2, lowCas2)
