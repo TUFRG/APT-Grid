@@ -19,7 +19,7 @@ and then:
 
 Open issues:
 
-1. Cutting at 4%/2% to clean up offset curve fraction maps is arbitrary, would be better to automate this. This seems to be a balancing act between non-orthogonal faces and cell size variation near the LE/TE.
+1. Cutting at 2%/0% to clean up offset curve fraction maps is arbitrary, would be better to automate this. This seems to be a balancing act between non-orthogonal faces and cell size variation near the LE/TE.
 
 2. No testing has been conducted on other geometries. Need to test on Justin's ECL5 stator and IGV.
 
