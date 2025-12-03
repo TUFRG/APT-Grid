@@ -5,7 +5,9 @@ Created on Thu Dec 15 10:57:20 2022
 
 @author: adekola
 """
-
+import numpy as np
+from scipy.interpolate import interp1d, CubicSpline
+from scipy.optimize import minimize
 def analytical_model(A, B, alpha, k=0):
     import numpy as np
     Temp = np.zeros(len(range(B)))
@@ -47,10 +49,10 @@ def without_loop(A,B,alpha,k):
     return Error
 
 def line(p1, p2):
-    A = (p1[1] - p2[1])
-    B = (p2[0] - p1[0])
-    C = (p1[0]*p2[1] - p2[0]*p1[1])
-    return A, B, -C
+    A = (p2[1] - p1[1])
+    B = (p1[0] - p2[0])
+    C = (p2[0]*p1[1] - p1[0]*p2[1])
+    return A, B, C
 
 def intersection(L1, L2):
     D  = L1[0] * L2[1] - L1[1] * L2[0]
@@ -84,10 +86,33 @@ def vectorRotP(x,y,P,theta):
 
 def cart2pol(x,y,z):
     import numpy as np
-    theta = np.arctan(y/x)
+    theta = np.arctan2(y,x)
+    # if np.all(x < 0) and np.any(y < 0) and np.any(y > 0): # This is important for situations of discontinuities. This happens when you 'just' cross the +ve y to -ve y via the -ve x-axis
+    #     theta = np.where(theta < 0, theta + 2*np.pi, theta) #Basically you adjust theta range from (-np.pi,np.pi) to (0, 2*np.pi)
     rho = np.sqrt(np.square(x)+np.square(y))
     Z = z
     return(theta, rho, Z)
+def densify_curve_simple(points, n_points_new):
+    if n_points_new <= len(points):
+        return points[:n_points_new]
+    # If 1D, reshape to 2D
+    points = np.atleast_2d(points)
+    if points.shape[0] == 1:
+        points = points.T   
+    current_points = points.copy()
+    n_to_add = n_points_new - len(points)
+    for _ in range(n_to_add):
+        # Calculate distances between consecutive points
+        diffs = np.diff(current_points, axis=0)
+        distances = np.linalg.norm(diffs, axis=1)
+        # Find the largest gap
+        max_gap_idx = np.argmax(distances)
+        # Insert a point at the midpoint of the largest gap
+        midpoint = (current_points[max_gap_idx] + current_points[max_gap_idx + 1]) / 2
+        # Insert the midpoint
+        current_points = np.insert(current_points, max_gap_idx + 1, midpoint, axis=0)
+    
+    return current_points
 
 def pol2cart(theta, r, Z):
     import numpy as np
@@ -192,7 +217,7 @@ def MidPts (Line):
     y2 = Line[len(Line)-1][1]
     x = (x1+x2)/2
     y = (y1+y2)/2
-    MidPoint = [x,y,0]
+    MidPoint = [x,y]
     return MidPoint
     
 def Slope (x1,y1,x2,y2):
@@ -511,135 +536,418 @@ def closest_point(point, points):
     import numpy as np
     return points[np.argmin([distance(point, p) for p in points])]
 
-def justin(bladeP, bladeS):
+def arclength(points):
+   import numpy as np
+   diffs = np.diff(points, axis=0)
+   distances = np.sqrt(np.sum(diffs**2, axis=1))
+   arclengths = np.cumsum(distances)
+   arclengths = np.insert(arclengths, 0, 0)  # Include starting point (0 arclength)
+   return arclengths
+   
+def unit_vector(v):
     import numpy as np
-    from scipy.interpolate import CubicSpline
-    # from scipy.optimize import fsolve
-    # from scipy.optimize import minimize
-    
-    preS = cart2pol(bladeP[:, 0], bladeP[:, 1], bladeP[:, 2])
-    suncS = cart2pol(bladeS[:, 0], bladeS[:, 1], bladeS[:, 2])
-    PS = np.empty([len(bladeP), 2])
-    PS[:, 1] = preS[0]*(preS[1])
-    PS[:, 0] = preS[2]
-    
-    SS = np.empty([len(bladeS), 2])
-    SS[:, 1] = suncS[0]*(suncS[1])
-    SS[:, 0] = suncS[2]
+    return v / np.linalg.norm(v)
 
-    blade = np.vstack((PS[0:len(PS)+1],SS[::-1][1:len(SS)+1]))
-    blade = blade[blade[:, 0].argsort()]
+def angle_bisector(p1, p2, p3, reflex=False):
+    v1 = unit_vector(p1 - p2)  # Vector from p2 to p1
+    v2 = unit_vector(p3 - p2)  # Vector from p2 to p3
     
-    leftmost_points = blade[:int(0.15 * len(blade))]
-    rightmost_points = blade[int(0.85 * len(blade)):]
-    
-    centroid = np.mean(blade, axis=0)
-    blade_centered = blade - centroid
-    dx = blade_centered[-1, 0] - blade_centered[0, 0] # x2 - x1
-    dy = blade_centered[-1, 1] - blade_centered[0, 1] # y2 - y1
-    angle_to_vertical = np.arctan2(dy, dx) - np.pi/2
-    
-    rotated_blade = rotate_points(blade_centered, angle_to_vertical)
-    rotated_blade += centroid  # Translate back to the original position
-    
-    rotated_PS = rotate_points(PS - centroid, angle_to_vertical) + centroid
-    rotated_SS = rotate_points(SS - centroid, angle_to_vertical) + centroid
-    
-    rotated_leftmost_points = rotated_blade[:int(0.1 * len(rotated_blade))]
-    rotated_rightmost_points = rotated_blade[int(0.9 * len(rotated_blade)):]
-    
-    rotated_leftmost_points = rotated_leftmost_points[rotated_leftmost_points[:, 0].argsort()]
-    rotated_rightmost_points = rotated_rightmost_points[rotated_rightmost_points[:, 0].argsort()]
-    
-    rotated_leftmost_points = np.unique(rotated_leftmost_points, axis=0)
-    rotated_rightmost_points = np.unique(rotated_rightmost_points, axis=0)
-
-    cs_leftmost = CubicSpline(rotated_leftmost_points[:, 0], rotated_leftmost_points[:, 1])
-    cs_rightmost = CubicSpline(rotated_rightmost_points[:, 0], rotated_rightmost_points[:, 1])
-    
-    x_fine_leftmost = np.linspace(rotated_leftmost_points[:, 0].min(), rotated_leftmost_points[:, 0].max(), 1000)
-    y_fine_leftmost = cs_leftmost(x_fine_leftmost)
-    x_fine_rightmost = np.linspace(rotated_rightmost_points[:, 0].min(), rotated_rightmost_points[:, 0].max(), 1000)
-    y_fine_rightmost = cs_rightmost(x_fine_rightmost)
-    
-    radii_leftmost = radius_of_curvature(cs_leftmost)
-    radii_rightmost = radius_of_curvature(cs_rightmost)
-    
-    min_radius_leftmost_index = np.argmin(radii_leftmost)
-    min_radius_rightmost_index = np.argmin(radii_rightmost)
-    min_radius_leftmost_x = x_fine_leftmost[min_radius_leftmost_index]
-    min_radius_rightmost_x = x_fine_rightmost[min_radius_rightmost_index]
-    
-    min_radius_leftmost_y = cs_leftmost(min_radius_leftmost_x)
-    min_radius_rightmost_y = cs_rightmost(min_radius_rightmost_x)
-    
-    left = rotated_blade[rotated_blade[:, 1] > min_radius_leftmost_y]
-    right = rotated_blade[rotated_blade[:, 1] < min_radius_rightmost_y]
-    middle_PS = rotated_PS[rotated_PS[:, 1] < min_radius_leftmost_y]
-    middle_PS = middle_PS[middle_PS[:, 1] > min_radius_rightmost_y]
-    middle_SS = rotated_SS[rotated_SS[:, 1] < min_radius_leftmost_y]
-    middle_SS = middle_SS[middle_SS[:, 1] > min_radius_rightmost_y]
-    
-    left = rotate_points(left, -angle_to_vertical) + centroid
-    right = rotate_points(right, -angle_to_vertical) + centroid
-    middle_PS = rotate_points(middle_PS, -angle_to_vertical) + centroid
-    middle_SS = rotate_points(middle_SS, -angle_to_vertical) + centroid
-    
-    left = left[left[:, 1].argsort()]
-    right = right[right[:, 1].argsort()]
-    
-    min_x_PS = middle_PS[:, 0].min()
-    max_x_PS = middle_PS[:, 0].max()
-    min_x_SS = middle_SS[:, 0].min()
-    max_x_SS = middle_SS[:, 0].max()
-    
-    common_min_x = max(min_x_PS, min_x_SS)
-    common_max_x = min(max_x_PS, max_x_SS)  
-    cs_middle_PS = CubicSpline(middle_PS[:, 0], middle_PS[:, 1])
-    cs_middle_SS = CubicSpline(middle_SS[:, 0], middle_SS[:, 1])
-    x_common = np.linspace(common_min_x, common_max_x, 1000)
-    
-    y_camber_line = 0.5 * (cs_middle_PS(x_common) + cs_middle_SS(x_common))
-    camber_line = np.column_stack((x_common, y_camber_line))
-    camber_line = camber_line[camber_line[:, 0].argsort()]
-    cs_camber_line = CubicSpline(camber_line[:, 0], camber_line[:, 1])   
-    d2ydx2_camber = cs_camber_line.derivative(nu=2)(camber_line[:, 0])
-    boundary_points = np.where(np.diff(np.sign(d2ydx2_camber)))[0]
-    left_boundary_points = boundary_points[boundary_points[:] < 500]
-    right_boundary_points = boundary_points[boundary_points[:] > 500]
-    
-    left_boundary_points_x = camber_line[left_boundary_points, 0]
-    left_boundary_points_y = camber_line[left_boundary_points, 1]
-    right_boundary_points_x = camber_line[right_boundary_points, 0]
-    right_boundary_points_y = camber_line[right_boundary_points, 1]
-    left_boundary_points = np.column_stack((left_boundary_points_x, left_boundary_points_y))
-    right_boundary_points = np.column_stack((right_boundary_points_x, right_boundary_points_y))  
-    camber_line = camber_line[(camber_line[:, 0] > left_boundary_points[:, 0].max()) & (camber_line[:, 0] < right_boundary_points[:, 0].min())]
-    
-    leftmost_camber_points = camber_line[:3]
-    rightmost_camber_points = camber_line[-3:]
-    
-    center, radius = circle_from_points(leftmost_camber_points[0], leftmost_camber_points[1], leftmost_camber_points[2])
-    circle_points = generate_circle_points(center, radius)
-    arc_leftmost = circle_points[(circle_points[:, 0] < leftmost_camber_points[:, 0].max()) & (circle_points[:, 0] > left[:, 0].min()) & (circle_points[:, 1] > left[:, 1].min())]
-    intersection_point_left = TwoLinesIntersect(circle_points,left)
-    intersection_point_left = np.array(intersection_point_left)
-    
-    center1, radius1 = circle_from_points(rightmost_camber_points[0], rightmost_camber_points[1], rightmost_camber_points[2])
-    circle_points1 = generate_circle_points(center1, radius1)
-    arc_rightmost = circle_points1[(circle_points1[:, 0] > rightmost_camber_points[:, 0].min()) & 
-                                  (circle_points1[:, 0] < right[:, 0].max()) & 
-                                  (circle_points1[:, 1] > right[:, 1].min())]
-
-    intersection_point_right = TwoLinesIntersect(circle_points1,right)
-    intersection_point_right = np.array(intersection_point_right)
-    
-    camber_line = np.vstack((camber_line, intersection_point_left, arc_leftmost, arc_rightmost, intersection_point_right))
-    camber_line = camber_line[camber_line[:, 0].argsort()]
-    camber_line = np.unique(camber_line, axis=0)
-    
-    return intersection_point_left, intersection_point_right, camber_line
+    bisector = unit_vector(v1 + v2)  # Sum and normalize to get bisector direction
+    if reflex:
+        bisector = -bisector  # Negate to get bisector of reflex angle
+    return bisector
+def find_angle(p1, p2, p3):
+    import numpy as np
+    a = np.asarray(p1, dtype=float)
+    b = np.asarray(p2, dtype=float)
+    c = np.asarray(p3, dtype=float)
+   
+    v1 = a - b
+    v2 = c - b
+    # v1 = p1 - p2  # Vector from p2 to p1
+    # v2 = p3 - p2  # Vector from p2 to p3
+    dot_product = np.dot(v1, v2)
+    norm_v1 = np.linalg.norm(v1)
+    norm_v2 = np.linalg.norm(v2)
+    # Compute the acute/obtuse angle (0°–180°)
+    theta_rad = np.arccos(dot_product / (norm_v1 * norm_v2))
+    theta_deg = np.degrees(theta_rad)
+    return theta_deg
+def scale(rmin, rmax, tmin, tmax, m):
+    import numpy as np
+    m = np.asarray(m)  # Ensure m is an array
+    return ((m - rmin) / (rmax - rmin)) * (tmax - tmin) + tmin
+def find_optimal_ellipse_LE(points, slopes,initial_guess):
+    from scipy.optimize import minimize
+    if len(points) < 2:
+        raise ValueError("At least 2 points are required")  
+    def rotate_point(x, y, theta, inverse=False):
+        import numpy as np
+        if inverse:
+            theta = -theta  # Reverse the rotation if inverse is True
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+        R = np.array([[cos_t, -sin_t], [sin_t, cos_t]])  # Rotation matrix
+        return R @ np.array([x, y])  #@ is a matrix multiplication. Just learning this
+    def get_ellipse_coeffs_local(x3_y3):
+        import numpy as np
+        x3, y3 = x3_y3
+        local_points = points.copy()
+        local_points.append((x3, y3))     
+        A_matrix = []    
+        # Points constraints
+        for x, y in local_points:
+            A_matrix.append([x**2, x*y, y**2, x, y])     
+        # Slope constraints
+        for (x_s, y_s), m_s in slopes:
+            # Implicit differentiation: 2Ax + By + D + (Bx + 2Cy + E)m  = 0
+            A_matrix.append([2*x_s, y_s + x_s*m_s, 2*y_s*m_s, 1, m_s,])
+        # print("A_matrix contents:", A_matrix)
+        A_matrix = np.array(A_matrix)       
+        B_matrix = -np.ones(len(A_matrix))
+        B_matrix[3] = 0
+        B_matrix[4] = 0
+        # print(A_matrix)
+        solution = np.linalg.solve(A_matrix, B_matrix)
+        solution = np.append(solution, 1)    
+        return solution     
+    def objective(x3_y3):
+        import numpy as np
         
+        try:
+            coeffs = get_ellipse_coeffs_local(x3_y3)
+            A, B, C, D, E, F = coeffs          
+            # Check if this is an ellipse
+            disc = B**2 - 4*A*C
+            if disc >= 0:
+                # print('Discriminant is not negative!')
+                # print(x3_y3)
+                return 1e6 + 100*disc
+            # Calculate semi-axes directly from the coefficients
+            center = [(2*C*D - B*E) / (B**2 - 4*A*C), (2*A*E - B*D) / (B**2 - 4*A*C)] #Center of the ellipse 
+            angle = 0.5 * np.arctan2(-B, C - A) 
+            expr1 = 2 * (A*E**2 + C*D**2 - B*D*E + (B**2 - 4*A*C)*F)
+            expr2 = np.sqrt((A - C)**2 + B**2)           
+            if expr1 <= 0:
+                return 1e6                
+            a = np.sqrt(abs(expr1 * ((A + C) + expr2))) / abs(B**2 - 4*A*C)
+            b = np.sqrt(abs(expr1 * ((A + C) - expr2))) / abs(B**2 - 4*A*C)            
+            if a < b:  # Ensure a is major axis
+                a, b = b, a    
+            if b <  1e-10:
+                return float('inf') #1e6 
+            # Minimize maximum curvature (ab/(b**2cos**2(t)+a**2sin**2(t))**(3/2))
+            shifted1 = [(points[0][0] - center[0]), (points[0][1] - center[1])] #The first point is shifted by subtracting from the center to move to the origin
+            shifted2 = [(points[1][0] - center[0]), (points[1][1] - center[1])] # same thing is done for the second point 
+            rot1 = rotate_point(shifted1[0], shifted1[1], angle, inverse=True) # The first point is then rotated counterclockwise sort of like rotating back to the origin 
+            rot2 = rotate_point(shifted2[0], shifted2[1], angle, inverse=True) # same thing is done for the second point 
+            PointT1 = np.arctan2(rot1[1]/b, rot1[0]/a) # A parameter t is defined to determine the start and end angle of the segment of the ellipse needed here
+            PointT2 = np.arctan2(rot2[1]/b, rot2[0]/a) # The vertical and horizontal axis are normalized by the major and minor axis because unlike a circle an ellipse is streched
+            if abs(PointT1 - PointT2) <= 2*np.pi -  abs(PointT1 - PointT2): # in a weird way. So there is a need to 'un-scale' the ellipse for accurate start and end angle
+                tPoints = np.linspace(PointT1, PointT2, 1000) # This is the short path. kind of like the right way
+            else:
+                if PointT1 < PointT2: 
+                    PointT2 = PointT2 - 2*np.pi # Go in the clockwise direction 
+                else:
+                    PointT2 =PointT2 + 2*np.pi # Go in the anti-clockwise direction 
+                tPoints = np.linspace(PointT1, PointT2, 1000)  
+            R = (b**2*(np.cos(tPoints))**2 + a**2*(np.sin(tPoints)**2))**(3/2)/(a*b)
+            return max(1/R)/min(1/R)  
+        except Exception as e:
+            print(f"Error: {e}")
+            return float('inf') #1e6   
+        
+    result = minimize(objective, initial_guess, method='L-BFGS-B',  # Better for bounded problems
+        options={'ftol': 1e-8, 'maxiter': 1000} )             
+    third_point = result.x
+    # third_point = initial_guess
+    A, B, C, D, E, F = get_ellipse_coeffs_local(third_point)   
+    # Calculate ellipse properties
+    disc = B**2 - 4*A*C
+    if disc >= 0:
+        raise ValueError("The computed conic section is not an ellipse.")     
+    return A, B, C, D, E, F#, third_point
+
+def find_optimal_ellipse_TE(points, slopes,initial_guess):
+    import numpy as np
+    from scipy.optimize import minimize
+    if len(points) < 2:
+        raise ValueError("At least 2 points are required")  
+    def rotate_point(x, y, theta, inverse=False):
+        if inverse:
+            theta = -theta  # Reverse the rotation if inverse is True
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+        R = np.array([[cos_t, -sin_t], [sin_t, cos_t]])  # Rotation matrix
+        return R @ np.array([x, y])  #@ is a matrix multiplication. Just learning this
+    def get_ellipse_coeffs_local(x3_y3):
+        x3, y3 = x3_y3
+        local_points = points.copy()
+        local_points.append((x3, y3))     
+        A_matrix = []    
+        # Points constraints
+        for x, y in local_points:
+            A_matrix.append([x**2, x*y, y**2, x, y])     
+        # Slope constraints
+        for (x_s, y_s), m_s in slopes:
+            # Implicit differentiation: 2Ax + By + D + (Bx + 2Cy + E)m  = 0
+            A_matrix.append([2*x_s, y_s + x_s*m_s, 2*y_s*m_s, 1, m_s,])
+        A_matrix = np.array(A_matrix)       
+        B_matrix = -np.ones(len(A_matrix))
+        B_matrix[3] = 0
+        B_matrix[4] = 0
+        # print(A_matrix)
+        solution = np.linalg.solve(A_matrix, B_matrix)
+        solution = np.append(solution, 1)    
+        return solution     
+    def objective(x3_y3):
+        try:
+            coeffs = get_ellipse_coeffs_local(x3_y3)
+            A, B, C, D, E, F = coeffs          
+            # Check if this is an ellipse
+            disc = B**2 - 4*A*C        
+            if disc >= 0:
+                # print('Discriminant is not negative!')
+                # print(x3_y3)
+                return 1e6 + 100*disc
+            # Calculate semi-axes directly from the coefficients
+            center = [(2*C*D - B*E) / (B**2 - 4*A*C), (2*A*E - B*D) / (B**2 - 4*A*C)] #Center of the ellipse 
+            angle = 0.5 * np.arctan2(-B, C - A) 
+            expr1 = 2 * (A*E**2 + C*D**2 - B*D*E + (B**2 - 4*A*C)*F)
+            expr2 = np.sqrt((A - C)**2 + B**2) 
+            # print(expr1)
+            # if expr1 <= 0:
+            #     return 1e6                
+            a = np.sqrt(abs(expr1 * ((A + C) + expr2))) / abs(B**2 - 4*A*C)
+            b = np.sqrt(abs(expr1 * ((A + C) - expr2))) / abs(B**2 - 4*A*C)            
+            if a < b:  # Ensure a is major axis
+                a, b = b, a    
+            if b <  1e-10:
+                return float('inf') #1e6 
+            # Minimize maximum curvature (ab/(b**2cos**2(t)+a**2sin**2(t))**(3/2))
+            shifted1 = [(points[0][0] - center[0]), (points[0][1] - center[1])] #The first point is shifted by subtracting from the center to move to the origin
+            shifted2 = [(points[1][0] - center[0]), (points[1][1] - center[1])] # same thing is done for the second point 
+            rot1 = rotate_point(shifted1[0], shifted1[1], angle, inverse=True) # The first point is then rotated counterclockwise sort of like rotating back to the origin 
+            rot2 = rotate_point(shifted2[0], shifted2[1], angle, inverse=True) # same thing is done for the second point 
+            PointT1 = np.arctan2(rot1[1]/b, rot1[0]/a) # A parameter t is defined to determine the start and end angle of the segment of the ellipse needed here
+            PointT2 = np.arctan2(rot2[1]/b, rot2[0]/a) # The vertical and horizontal axis are normalized by the major and minor axis because unlike a circle an ellipse is streched
+    
+            if abs(PointT1 - PointT2) <= 2*np.pi -  abs(PointT1 - PointT2): # in a weird way. So there is a need to 'un-scale' the ellipse for accurate start and end angle
+                tPoints = np.linspace(PointT1, PointT2, 1000) # This is the short path. kind of like the right way
+            else:
+                if PointT1 < PointT2: 
+                    PointT2 = PointT2 - 2*np.pi # Go in the clockwise direction 
+                else:
+                    PointT2 =PointT2 + 2*np.pi # Go in the anti-clockwise direction 
+                tPoints = np.linspace(PointT1, PointT2, 1000) 
+            
+            R = (b**2*(np.cos(tPoints))**2 + a**2*(np.sin(tPoints)**2))**(3/2)/(a*b)
+            # print(R)
+            return min(1/R)/max(1/R)
+        except Exception as e:
+            print(f"Error: {e}")
+            return float('inf') #1e6   
+   
+    result = minimize(objective, initial_guess, method='L-BFGS-B',  # Better for bounded problems
+        options={'ftol': 1e-8, 'maxiter': 1000} )             
+    third_point = result.x
+    # third_point = initial_guess
+    A, B, C, D, E, F = get_ellipse_coeffs_local(third_point)   
+    # Calculate ellipse properties
+    disc = B**2 - 4*A*C
+    if disc >= 0:
+        raise ValueError("The computed conic section is not an ellipse.")     
+    return A, B, C, D, E, F
+def rotate_point(x, y, theta, inverse=False):
+    import numpy as np
+    if inverse:
+        theta = -theta  # Reverse the rotation if inverse is True
+    cos_t = np.cos(theta)
+    sin_t = np.sin(theta)
+    R = np.array([[cos_t, -sin_t], [sin_t, cos_t]])  # Rotation matrix
+    return R @ np.array([x, y])  #@ is a matrix multiplication. Just learning this 
+def cubicPolynomial(x, xPoints, yPoints, slopes):
+    import numpy as np
+    x1,x2 = xPoints
+    y1,y2 = yPoints
+    m1,m2 = slopes
+    A = np.array([
+    [x1**3, x1**2, x1, 1],
+    [x2**3, x2**2, x2, 1],
+    [3*x1**2, 2*x1, 1, 0],
+    [3*x2**2, 2*x2, 1, 0]])
+    # Create the solution vector b
+    b = np.array([y1, y2, m1, m2])
+    # Solve Ax = b for x (coefficients A, B, C, D)
+    coeffs = np.linalg.solve(A, b)
+    A, B, C, D = coeffs
+    return A*x**3 + B*x**2 + C*x + D
+def compute_span_fractions(points, A, B):
+    import numpy as np
+    points = np.array(points)
+    A = np.array(A)
+    B = np.array(B)
+    AB = B - A
+    AB_len_sq = np.dot(AB, AB)
+    # Vector from A to each point
+    AP = points - A
+
+    # Projection of AP onto AB gives the span fraction
+    s = np.dot(AP, AB) / AB_len_sq
+    return s
+def map_span_fractions_to_line(span_fractions, A_new, B_new):
+    import numpy as np
+    A_new = np.array(A_new)
+    B_new = np.array(B_new)
+    AB_new = B_new - A_new
+    return np.array([A_new + s * AB_new for s in span_fractions])
+def cartesian_to_cylindrical(coords):
+    import numpy as np
+    x = coords[:, 0]
+    y = coords[:, 1]
+    z = coords[:, 2]
+
+    r = np.sqrt(z**2 + y**2)
+    theta = np.arctan2(z, y)
+
+    cylindrical_coords = np.stack((theta, r, x), axis=-1)
+    return cylindrical_coords
+def rearrange_curve_by_arc_length(curve_points, reference_arc_params):
+    import numpy as np
+    # Compute arc length parameterization of the new curve
+    diffs = np.diff(curve_points, axis=0)
+    segment_lengths = np.sqrt(np.sum(diffs**2, axis=1))
+    cumulative_lengths = np.concatenate([[0], np.cumsum(segment_lengths)])
+    total_length = cumulative_lengths[-1]
+    normalized_arc_length = cumulative_lengths / total_length
+    
+    # Create interpolation functions for x and y
+    interp_x = interp1d(normalized_arc_length, curve_points[:, 0], 
+                        kind='cubic', bounds_error=False, fill_value='extrapolate')
+    interp_y = interp1d(normalized_arc_length, curve_points[:, 1], 
+                        kind='cubic', bounds_error=False, fill_value='extrapolate')
+    
+    # Sample at the reference arc length parameters
+    new_x = interp_x(reference_arc_params)
+    new_y = interp_y(reference_arc_params)
+    
+    return np.column_stack([new_x, new_y])
+
+def resample_curve_preserve_density(A: np.ndarray, N_out: int = 1000) -> np.ndarray:
+    import numpy as np
+    # Step 1: Compute cumulative arc length
+    diffs = np.diff(A, axis=0)
+    segment_lengths = np.linalg.norm(diffs, axis=1)
+    arc_lengths = np.concatenate([[0], np.cumsum(segment_lengths)])
+
+    # Step 2: Create interpolators for x, y, z vs arc length
+    fx = interp1d(arc_lengths, A[:, 0], kind='linear')
+    fy = interp1d(arc_lengths, A[:, 1], kind='linear')
+    fz = interp1d(arc_lengths, A[:, 2], kind='linear')
+
+    # Step 3: Sample N_out arc length values spaced like the original (not uniform)
+    # We'll do this by using the original arc length density
+    arc_sampled = np.interp(
+        np.linspace(0, 1, N_out),
+        np.linspace(0, 1, len(arc_lengths)),
+        arc_lengths
+    )
+
+    # Step 4: Interpolate positions at sampled arc lengths
+    x_new = fx(arc_sampled)
+    y_new = fy(arc_sampled)
+    z_new = fz(arc_sampled)
+
+    return np.vstack([x_new, y_new, z_new]).T 
+    
+def findOptimalBeta(alpha,N, initial_guess):
+    def getSSE(beta):
+        SSE = np.zeros(N)
+        for i in range(N):
+            SSE[i] = (beta[i] - alpha[i])**2
+        sumSSE = np.sum(SSE)
+        return sumSSE
+    def objective(beta):
+        try:
+            Error = getSSE(beta)
+            return Error
+        except Exception as e:
+            print(f"Error: {e}")
+            return float('inf')
+    result = minimize(objective, initial_guess, method='L-BFGS-B', bounds= None, options={'ftol': 1e-8, 'maxiter': 1000})
+    betaValues = result.x
+    return betaValues
+
+def optimalBeta(Mprime1, Mprime2, theta2, alpha):
+    def getTheta(beta):
+        theta1 = theta2 + np.tan(beta)*(Mprime1 - Mprime2)
+        return theta1
+    
+def densify_curve_robust(points, n_points_new):
+    # Handle edge cases
+    if n_points_new <= 0:
+        raise ValueError("n_points_new must be positive")
+    points = np.atleast_2d(points)
+    if points.shape[0] == 1:
+        points = points.T
+    # If we already have the desired number of points, return copy
+    if n_points_new == len(points):
+        return points.copy()
+    # Case 1: Need to add points (densify)
+    elif n_points_new > len(points):
+        return _add_points(points, n_points_new)
+    # Case 2: Need to remove points (sparsify)
+    else:
+        return _remove_points(points, n_points_new)
+    
+def _add_points(points, n_points_new):
+    """Add points by inserting at midpoints of largest gaps."""
+    current_points = points.copy()
+    n_to_add = n_points_new - len(points)
+    for _ in range(n_to_add):
+        # Calculate distances between consecutive points
+        diffs = np.diff(current_points, axis=0)
+        distances = np.linalg.norm(diffs, axis=1)
+        # Find the largest gap
+        max_gap_idx = np.argmax(distances)
+        # Insert a point at the midpoint of the largest gap
+        midpoint = (current_points[max_gap_idx] + current_points[max_gap_idx + 1]) / 2
+        # Insert the midpoint
+        current_points = np.insert(current_points, max_gap_idx + 1, midpoint, axis=0)
+    return current_points
+
+def _remove_points(points, n_points_new):
+    """Remove points by eliminating those that create smallest distances."""
+    current_points = points.copy()
+    n_to_remove = len(points) - n_points_new
+    # Always keep the first and last points
+    if n_points_new < 2:
+        raise ValueError("Cannot reduce to fewer than 2 points")
+    for _ in range(n_to_remove):
+        if len(current_points) <= 2:
+            break
+        # Calculate distances between consecutive points
+        diffs = np.diff(current_points, axis=0)
+        distances = np.linalg.norm(diffs, axis=1)
+        # Don't remove first or last point, so exclude first and last distances
+        # from consideration (they involve the endpoints)
+        if len(distances) <= 2:
+            break
+        # Find the smallest distance among removable points (not endpoints)
+        removable_distances = distances[1:-1]  # Exclude first and last distances
+        min_distance_idx = np.argmin(removable_distances) + 1  # Adjust index
+        # The point to remove is the one that creates this small distance
+        # We remove the second point of the pair (min_distance_idx + 1)
+        point_to_remove = min_distance_idx + 1
+        # Remove the point
+        current_points = np.delete(current_points, point_to_remove, axis=0)
+    return current_points
+    
+    
+    
+    
+    
+    
     
     
     
