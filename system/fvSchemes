@@ -22,20 +22,20 @@ gradSchemes
 {
     default         Gauss linear;
 
-    limited         cellLimited Gauss linear 1;
-    grad(U)         $limited;
-    grad(k)         $limited;
-    grad(omega)     $limited;
+    //limited         cellLimited Gauss linear 1;
+   // grad(U)         $limited;
+   // grad(k)         $limited;
+   // grad(omega)     $limited;
 }
 
 divSchemes
 {
     default             none;
 
-    div(phi,U)          Gauss linearUpwind limited;
+    div(phi,U)          Gauss linearUpwindV limited;
 
-    turbulence          Gauss linearUpwind limited;
-    energy              Gauss linearUpwind limited;
+    turbulence          Gauss upwind;//linearUpwind limited;
+    energy              Gauss upwind;//linearUpwind limited;
 
     div(phi,k)          $turbulence;
     div(phi,omega)      $turbulence;
@@ -47,12 +47,15 @@ divSchemes
 
     div((phi|interpolate(rho)),p) Gauss upwind;
 
-    div(((rho*nuEff)*dev2(T(grad(U))))) Gauss linear;
+    //div(((rho*nuEff)*dev2(T(grad(U))))) Gauss linear; //orig. rho*nuEff
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;
+    div(phi,epsilon)   $turbulence;
 }
 
 laplacianSchemes
 {
     default         Gauss linear corrected;
+    laplacian(diffusivity,cellDisplacement) Gauss linear corrected;
 }
 
 interpolationSchemes

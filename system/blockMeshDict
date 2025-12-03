@@ -1,8 +1,8 @@
 /*--------------------------------*- C++ -*----------------------------------*\
   =========                 |
   \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
-   \\    /   O peration     | Website:  https://openfoam.org
-    \\  /    A nd           | Version:  11
+   \\    /   O peration     | Website:  https://openfoam.com
+    \\  /    A nd           | Version:  v2312
      \\/     M anipulation  |
 \*---------------------------------------------------------------------------*/
 FoamFile
@@ -13,39 +13,315 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// for test case, dimensions in mm
+/*
+Updated October 2025 to include all BLs within blockMesh,
+by using 4 extra blocks for the blade BLs to make an OH
+mesh topology.
+
+Passage-centered, which is more natural for aperiodic
+passages.
+Updates by Jeff Defoe
+
+Background block vertices adjusted to match geometry,
+work by Tony Woo and Jeff Defoe.
+
+Full integration of updated background blocks with existing
+code structure, August-September 2025 by Jeff Defoe.
+
+Grading: details computed via Python code.
+
+Note: a critical assumption made is that the Z direction is
+the axial direction, with the net flow in the +Z direction.
+
+ 3 November 2025: working except for grading on offsets needs fixing.
+ 6 November 2025: issue with periodics matching when all projection/grading
+			 	 included.
+11 November 2025: started working on converting mesh generation to be in
+				  cylindrical coordinates
+12 November 2025: addition of extra geometry so almost all block faces have
+				  dedicated STLs.
+14 November 2025: abandoned mesh generation in cylindrical coordinates due
+			 	  to grading issues that resulted.
+18 November 2025: still have some quasi-random surfaces/edges disabled, but
+				  grid is finally working with no errors, non-ortho < 80,
+				  and successfully makes periodic matches.
+*/
+
+// ------------ START INPUT BLOCK -------------------- //
+
+// Inputs for geometry and overall mesh resolution
+
+// for example, if input STLs and passageGeometry and vertices
+// files are in mm, then scale=0.001
 scale 0.001;
 
-// radial
-rMin 93.75437519983689;
-rMax 266.5889612944039;
+// Inputs related to grid resolution
+	// radial (outside BLs)
+nrad 40;
+	// tangential (outside BLs)
+ntan 112;
+	// upstream
+nax1 68;
+	// first half of between blades
+nax2 31;
+	// second half of between blades
+nax3 33;
+	// downstream
+nax4 76;
+	// hub BL
+nBLcellsHub 25;
+	// casing BL
+nBLcellsCas 25;
+	// blade BL
+nBLcellsBlade 33;
 
-// axial
-zMin 21.2;
-zMax 395.0;
+// geometry parameters for BL computations (in input length units)
 
-// circumferential
-qMax 0.31018679700658136;
-qMin -0.04418430901085042;
+// radial spans at each block face
+// (estimated arclengths of block edges)
+spanI 179.09854611766968;
+spanL 135.5153942991857;
+spanK $spanL;
+spanM 123.35059033064667;
+spanP $spanM;
+spanT 115.28570903667;
+spanU $spanT;
+spanO 112.71543212935562;
 
-// Number of cells
-rCells 30; // radial direction
-zUCells 12; // upstream
-zMCells 15; // middle (each half)
-zDCells 12; // downstream
-qCells 22; // circumferential direction (PER SIDE -- 1/2 of total)
+// BL parameters
+	// These are just the BL thickness for the hub
+	// and casing (in input units).
+delHub 7.674815941091195;
+delCas 7.674815941091195;
 
-qLE #eval{($qMax + $qMin)/2};
-zLE 141.3841;
-qTE #eval{($qMax + $qMin)/2};
-zTE 214.762;
-qSS #eval{$qLE + 1}; // whether grid is successful or not is super sensitive to this. Oddly values that seem sensible fail!
-zSS 178.07305;
-qPS #eval{$qLE - 1}; // same issue as qPS
-zPS 178.07305;
+// radial grading inputs
+	// grading ratio for "inner" radial segments.
+	// This is the factor by which the cell size
+	// at midspan is larger than the cell size
+	// adjacent to the endwall BLs, e.g. if
+	// this number is 2, the cells at the midpoint
+	// of the span will be twice as large as the
+	// cells just outside the hub and casing BLs.
+gRad 2;
 
-//- Derived quantities
-//
+// tangential grading inputs
+	// grading ratio for "inner" tangential segments.
+	// This is the factor by which the cell size
+	// at midpassage is larger than the cell size
+	// adjacent to the blade BLs, e.g. if
+	// this number is 2, the cells at the midpoint
+	// of the passage  will be twice as large as the
+	// cells just outside the blade BLs.
+gTan 2;
+gTanIhub 1.0;
+gTanOhub 1.0;
+gTanIcas 1.0;
+gTanOcas 1.0;
+
+// BL grading inputs
+	// for hub, casing, and blade
+gBLhub 201.824229467;
+gBLcas 201.824229467;
+gBLbla 31.496562344;
+
+// axial grading inputs
+	// Axial grading works quite differently.
+	// Here we aren't worried about BL resolution.
+	// Here all parameters should be computed
+	// separately for the 4 edges of each block,
+	// since the chord and lengths can in general
+	// be different for each blade and at the hub
+	// and casing.
+	// For the upstream and downstream blocks, want
+	// 2 regions: a close-to-the-blade region which
+	// has a length equal to 1/2 of a chord, and,
+	// if the block is long enough, a second region
+	// which goes to the domain end where axially,
+	// the cells are unifomr.
+	// For the over-blade blocks, also want 2
+	// regions: a near LE/TE region (1/4 of length)
+	// and a region outsdie that. Would expect to
+	// have non-uniform grading in BOTH regions,
+	// but with continuity of cell sizes guaranteed
+	// and less grading far from the LE/TE.
+
+	// for the over-blade blocks:
+	// fraction of cells to go in 1/4 of length near LE
+fLEHP 0.5013328264863303;
+fLEHN 0.5038331132947075;
+fLECP 0.49648771669159747;
+fLECN 0.5016729252820011;
+	// grading ratio for first 1/4 of front over-blade block
+gLEHP 16.933980375662706;
+gLEHN 16.180283751308764;
+gLECP 18.219327240398027;
+gLECN 16.558500257014437;
+	// grading ratio for rest of 1st over-blade block
+gM1HP 0.8943173238089395;
+gM1HN 0.9367662415373575;
+gM1CP 0.8241659575585869;
+gM1CN 0.9085487180650349;
+	// fraction of cells to go in 1/4 of length near TE
+fTEHP 0.5413808357596422;
+fTEHN 0.5409680712351688;
+fTECP 0.5411372334871184;
+fTECN 0.5396388608657773;
+	// grading ratio for last 1/4 of back over-blade block
+gTEHP 0.0484944591111003;
+gTEHN 0.04817515946034443;
+gTECP 0.04902146215935874;
+gTECN 0.04785725575778005;
+	// grading ratio for rest of 2nd over-blade block
+gM2HP 0.9062830705150966;
+gM2HN 0.9123563698331373;
+gM2CP 0.9027421362982239;
+gM2CN 0.9249516493900339;
+
+	// for offsets:
+axgrading2HPoffset (0.0061659905576380535 1 1) (0.007445950169618966 1 1) (0.008991608632901714 1 1) (0.010858120718716797 1 1) (0.013112090434053897 1 1) (0.0158339476972702 1 1) (0.019120818372999462 1 1) (0.017599702658162977 1 1) (0.011822186498009438 1 1) (0.014328449417049166 1 1) (0.016480896108081344 1 1) (0.02074557070086583 1 1) (0.02415196243292808 1 1) (0.02917329382291181 1 1) (0.03582028408839619 1 1) (0.0418621084392275 1 1) (0.05069158864242074 1 1) (0.04864314916563539 1 1) (0.04849169545390375 1 1) (0.048187720786916965 1 1) (0.04782950045315193 1 1) (0.04718292311379879 1 1) (0.04591449528383795 1 1) (0.04681245986714244 1 1) (0.04644228717797794 1 1) (0.04459805174090903 1 1) (0.0456538626990719 1 1) (0.04526416474592143 1 1) (0.04357748898013636 1 1) (0.04452521838503143 1 1) (0.052672412755312537 1 1);
+axgrading2HNoffset (0.007738709145540215 1 1) (0.009316817743298275 1 1) (0.01121674057382837 1 1) (0.013504103285810046 1 1) (0.016257914173331403 1 1) (0.01957329321859929 1 1) (0.023564757651981197 1 1) (0.017174052040165727 1 1) (0.01176993355692496 1 1) (0.013948244387437275 1 1) (0.0165250183568586 1 1) (0.019897368676001476 1 1) (0.023387552757823116 1 1) (0.028648739114945032 1 1) (0.03413619628524084 1 1) (0.041236052629278486 1 1) (0.04825239471835002 1 1) (0.04711428992310995 1 1) (0.04733642463328247 1 1) (0.04762606976499756 1 1) (0.04820104018792343 1 1) (0.046911687681137626 1 1) (0.04681582550663077 1 1) (0.04658318904163161 1 1) (0.0473653819105041 1 1) (0.04624962068336047 1 1) (0.046040844968436634 1 1) (0.046735505485304585 1 1) (0.0457064879450666 1 1) (0.045541267199114 1 1) (0.035624476754085865 1 1);
+axgrading2CPoffset (0.004993023501381725 1 1) (0.006143298729767028 1 1) (0.007558570327720934 1 1) (0.009299887228708795 1 1) (0.011442362605201668 1 1) (0.014078413938691997 1 1) (0.017321749525666563 1 1) (0.014688142887079453 1 1) (0.014602620969954502 1 1) (0.01807367855010257 1 1) (0.02069549406282964 1 1) (0.02716900356336413 1 1) (0.030943316311587393 1 1) (0.03980537475755888 1 1) (0.04635420068219434 1 1) (0.04890165697425597 1 1) (0.04989131730037111 1 1) (0.04765194753416235 1 1) (0.04633832736542509 1 1) (0.045002157432198486 1 1) (0.04604953405009804 1 1) (0.04528621160006563 1 1) (0.04463611220179142 1 1) (0.04247096235019032 1 1) (0.043359096316503476 1 1) (0.042386609146934484 1 1) (0.0412709731692783 1 1) (0.041606733282875896 1 1) (0.03995075997484998 1 1) (0.04062840845321625 1 1) (0.05140005520597357 1 1);
+axgrading2CNoffset (0.005574228022644601 1 1) (0.006721292519117906 1 1) (0.008104399917626157 1 1) (0.009772123120366568 1 1) (0.011783030360078002 1 1) (0.014207742038898075 1 1) (0.017131410823466267 1 1) (0.015961977554238838 1 1) (0.013434895880113845 1 1) (0.015341171596474162 1 1) (0.017882511171918636 1 1) (0.020960501608986798 1 1) (0.024914376080664047 1 1) (0.02981488116509287 1 1) (0.035189608790165805 1 1) (0.04345228266943654 1 1) (0.04966495103504981 1 1) (0.050225641460478754 1 1) (0.049887804380557454 1 1) (0.04956142232982452 1 1) (0.049242473715865376 1 1) (0.048949370906877565 1 1) (0.04863911361331186 1 1) (0.049241914574112866 1 1) (0.04787938378423584 1 1) (0.04760630800665966 1 1) (0.04822477466707897 1 1) (0.046941347239985776 1 1) (0.04670186309206059 1 1) (0.04737604369856652 1 1) (0.029611154176045318 1 1);
+
+axgrading3HPoffset (0.03889527090723233 1 1) (0.0507340091754158 1 1) (0.04912160830677141 1 1) (0.049999268373577266 1 1) (0.049601562352039136 1 1) (0.04815088406907808 1 1) (0.048845825243525653 1 1) (0.04848578879792631 1 1) (0.04714467864177918 1 1) (0.047727113646462926 1 1) (0.04733249781278942 1 1) (0.046922608563533474 1 1) (0.04657775052773416 1 1) (0.04617291622512365 1 1) (0.04583305412158223 1 1) (0.04087388332590425 1 1) (0.03454974183135262 1 1) (0.02889492847925179 1 1) (0.0240344812662463 1 1) (0.020179311030710134 1 1) (0.017085738727444233 1 1) (0.014166400615402641 1 1) (0.011917941575916524 1 1) (0.010061813632782246 1 1) (0.016379545571812648 1 1) (0.01510085523321314 1 1) (0.012638319082571958 1 1) (0.010577355174003378 1 1) (0.008852478066589065 1 1) (0.007408881202367379 1 1) (0.006200695472826312 1 1) (0.005189531765530719 1 1) (0.004343261181503633 1 1);
+axgrading3HNoffset (0.06079168272666884 1 1) (0.0482049658471032 1 1) (0.0489151305980325 1 1) (0.04769598415515583 1 1) (0.048348204754170704 1 1) (0.04710053526866542 1 1) (0.046889402472807096 1 1) (0.04739904908544934 1 1) (0.04633381801605557 1 1) (0.046072309600501016 1 1) (0.04584851674974377 1 1) (0.04549465380148765 1 1) (0.0454173844919592 1 1) (0.0450134117704023 1 1) (0.04488110750423546 1 1) (0.03998187781101048 1 1) (0.03346366199281536 1 1) (0.027724708505197704 1 1) (0.023571183058755385 1 1) (0.019768806439809272 1 1) (0.016464735274742792 1 1) (0.01388088026808354 1 1) (0.011702731771783048 1 1) (0.009838361569233456 1 1) (0.00826655502582696 1 1) (0.006956516636313137 1 1) (0.005854585809465074 1 1) (0.004943876449469031 1 1) (0.00597032353334348 1 1) (0.0105542290660402 1 1) (0.009843201561217652 1 1) (0.01058054184256374 1 1) (0.026227066541891775 1 1);
+axgrading3CPoffset (0.035299231399890836 1 1) (0.0501338998430011 1 1) (0.04858864444453283 1 1) (0.04953376934161638 1 1) (0.047841459612096626 1 1) (0.04890683881856711 1 1) (0.04848417133452548 1 1) (0.04692991227388538 1 1) (0.0477687639419585 1 1) (0.047404086641968934 1 1) (0.047025257386745956 1 1) (0.04677656104935124 1 1) (0.04630300668474008 1 1) (0.04583792473547621 1 1) (0.04552775612511106 1 1) (0.04065818815353739 1 1) (0.034384241365224666 1 1) (0.029221896023749028 1 1) (0.023977070258531907 1 1) (0.02021557037178756 1 1) (0.01737961402484478 1 1) (0.014227089422325978 1 1) (0.0120605507523589 1 1) (0.010264248208061821 1 1) (0.01823493950402133 1 1) (0.01651337157759636 1 1) (0.013829282585717917 1 1) (0.011581466324848688 1 1) (0.009699010877984415 1 1) (0.008122530375055392 1 1) (0.006802291545362937 1 1) (0.005696644780820437 1 1) (0.004770710214702767 1 1);
+axgrading3CNoffset (0.06476249711152565 1 1) (0.04825804084796913 1 1) (0.04690556994333718 1 1) (0.04768916246578189 1 1) (0.04643018936919954 1 1) (0.04618958632969472 1 1) (0.046935821858685334 1 1) (0.04572755550117252 1 1) (0.045473705865202385 1 1) (0.04519457171605584 1 1) (0.04615688564242226 1 1) (0.04469272837933158 1 1) (0.04459275004410013 1 1) (0.04452713071561243 1 1) (0.0433789346929101 1 1) (0.03933109040903204 1 1) (0.03285123694544123 1 1) (0.027264855722091252 1 1) (0.022830017322667318 1 1) (0.019458774572397752 1 1) (0.016227205028091052 1 1) (0.013564064829330147 1 1) (0.011552073605967328 1 1) (0.009712784542732833 1 1) (0.008173005864050342 1 1) (0.006890645152797581 1 1) (0.005807441696655258 1 1) (0.004930751176632442 1 1) (0.007386655273717291 1 1) (0.013378391318940364 1 1) (0.011887473318602959 1 1) (0.012119733639655794 1 1) (0.029718669098196315 1 1);
+
+	// for upstream and downstream blocks:
+	// blade chord at hub on positive theta side (input units)
+cHP 74.49940735485394;
+	// blade chord at hub on negative theta side (input units)
+cHN 74.49940735485396;
+	// blade chord at casing on positive theta side (input units)
+cCP 75.02804743779707;
+	// blade chord at casing on negative theta side (input units)
+cCN 75.02804743779707;
+
+	// for upstream block:
+	// length of upstream block at hub (input units) (positive theta)
+L1HP 133.73840538289454;
+	// grading ratio for cells (hub) in part of block longer than 0.5 chord from LE (positive theta)
+g1HPfar 0.1577921451658615;
+	// fraction of cells (hub) to go in part of block that occupies first 0.5 chord from LE (positive theta)
+	// note: will be 1.0 if L1-0.5*C <= 0
+f1HPclo 0.7628459264960786;
+	// grading ratio for cells (hub) in part of block that occupies first 0.5 chord from LE (positive theta)
+g1HPclo 0.09252385567767837;
+
+	// length of upstream block at hub (input units) (negative theta)
+L1HN 133.73840538289454;
+	// grading ratio for cells (hub) in part of block longer than 0.5 chord from LE (negative theta)
+g1HNfar 0.15779214516586199;
+	// fraction of cells (hub) to go in part of block that occupies first 0.5 chord from LE (negative theta)
+	// note: will be 1.0 if L1-0.5*C <= 0
+f1HNclo 0.7628459264960786;
+	// grading ratio for cells (hub) in part of block that occupies first 0.5 chord from LE (negative theta)
+g1HNclo 0.09252385567767837;
+
+	// length of upstream block at casing (input units) (positive theta)
+L1CP 79.37563772662237;
+	// grading ratio for cells (casing) in part of block longer than 0.5 chord from LE (positive theta)
+g1CPfar 0.5563044160606853;
+	// fraction of cells (casing) to go in part of block that occupies first 0.5 chord from LE (positive theta)
+	// note: will be 1.0 if L1-0.5*C <= 0
+f1CPclo 0.7683061261365678;
+	// grading ratio for cells (casing) in part of block that occupies first 0.5 chord from LE (positive theta)
+g1CPclo 0.09252385567767837;
+
+	// length of upstream block at casing (input units) (negative theta)
+L1CN 79.37563772662236;
+	// grading ratio for cells (casing) in part of block longer than 0.5 chord from LE (negative theta)
+g1CNfar 0.5563044160606853;
+	// fraction of cells (casing) to go in part of block that occupies first 0.5 chord from LE (negative theta)
+	// note: will be 1.0 if L1-0.5*C <= 0
+f1CNclo 0.7683061261365678;
+	// grading ratio for cells (casing) in part of block that occupies first 0.5 chord from LE (negative theta)
+g1CNclo 0.09252385567767837;
+
+	// for downstream block:
+	// fraction of cells (hub) to go in part of block that occupies first 0.5 chord from TE (positive theta)
+	// note: will be 1.0 if L1-0.5*C <= 0
+f4HPclo 0.7072627017314321;
+	// grading ratio for cells (hub) in part of block that occupies first 0.5 chord from TE (positive theta)
+g4HPclo 12.118875927289329;
+	// length of downstream block at hub (input units) (positive theta)
+L4HP 184.148809430988;
+	// grading ratio for cells (hub) in part of block longer than 0.5 chord from TE (positive theta)
+g4HPfar 7.558304733745871;
+
+	// fraction of cells (hub) to go in part of block that occupies first 0.5 chord from TE (negative theta)
+	// note: will be 1.0 if L1-0.5*C <= 0
+f4HNclo 0.7072627017314322;
+	// grading ratio for cells (hub) in part of block that occupies first 0.5 chord from TE (negative theta)
+g4HNclo 12.118875927289329;
+	// length of downstream block at hub (input units) (negative theta)
+L4HN 184.14880943124615;
+	// grading ratio for cells (hub) in part of block longer than 0.5 chord from TE (negative theta)
+g4HNfar 7.558304733764962;
+
+	// fraction of cells (casing) to go in part of block that occupies first 0.5 chord from TE (positive theta)
+	// note: will be 1.0 if L1-0.5*C <= 0
+f4CPclo 0.71232726574594;
+	// grading ratio for cells (casing) in part of block that occupies first 0.5 chord from TE (positive theta)
+g4CPclo 12.118875927289329;
+	// length of downstream block at casing (input units) (positive theta)
+L4CP 180.78346464135205;
+	// grading ratio for cells (casing) in part of block longer than 0.5 chord from TE (positive theta)
+g4CPfar 7.465799885307464;
+
+	// fraction of cells (casing) to go in part of block that occupies first 0.5 chord from TE (negative theta)
+	// note: will be 1.0 if L1-0.5*C <= 0
+f4CNclo 0.71232726574594;
+	// grading ratio for cells (casing) in part of block that occupies first 0.5 chord from TE (negative theta)
+g4CNclo 12.118875927289329;
+	// length of downstream block at casing (input units) (negative theta)
+L4CN 180.7834646421634;
+	// grading ratio for cells (casing) in part of block longer than 0.5 chord from TE (negative theta)
+g4CNfar 7.465799885368209;
+
+// vertices for unprojected background blocks
+	// pos
+hubIp (81.5726949074037 46.69880219238142 21.20000051066513) ;
+casIp (247.04305159928788 71.7070024800136 85.0000020474781) ;
+hubKp (127.50309461716407 13.245048180173278 140.0721616047258) ;
+casKp (263.3714592303055 22.07685147365275 142.16038108862983) ;
+hubLp (128.23948055952508 12.502184115751346 141.77679555589552) ;
+casLp (263.46546606269766 21.09548168620599 143.90051249210808) ;
+hubMp (141.00504330793476 -3.5836151734768844 176.3509540754259) ;
+casMp (264.304714629714 -1.0965525749333704 179.14099922086456) ;
+hubPp (140.94020594377045 -5.582546114158674 176.3509540754259) ;
+casPp (264.28884692506 -3.0964848689227433 179.14099922086456) ;
+hubTp (149.0390199429717 -5.829512704959391 210.9251125949563) ;
+casTp (264.26649809580783 -4.614411944293843 214.381485949621) ;
+hubUp (149.34981355109056 -6.027342654190206 212.89091952668852) ;
+casUp (264.2609365210116 -4.936948712759217 216.35529445456814) ;
+hubOp (151.61399072387914 -10.366677490890229 395.0000095147512) ;
+casOp (264.312234849731 -12.335029862104825 395.00000951475124) ;
+	// neg
+hubIn (89.30329682169625 29.322412203561093 21.20000051066513) ;
+casIn (256.42057929910806 20.50975524151706 85.0000020474781) ;
+hubKn (127.55930737703385 -12.692262987347936 140.0721616047258) ;
+casKn (262.42426751730835 -31.39134794962425 142.16038108862983) ;
+hubLn (128.13108201909876 -13.56815398114111 141.7767955558955) ;
+casLn (262.318801738446 -32.3715524761077 143.90051249210808) ;
+hubMn (137.97691877261215 -29.286828016265755 176.35095407542588) ;
+casMn (259.5653532658173 -49.83982780859131 179.14099922086456) ;
+hubPn (138.37815556349415 -27.327505108123855 176.35095407542588) ;
+casPn (259.9350577070156 -47.87430001965346 179.14099922086456) ;
+hubTn (144.81471016872206 -35.71151638740404 210.9251125949563) ;
+casTn (257.9280730593233 -57.71640963640777 214.381485949621) ;
+hubUn (145.079318937415 -35.96785903931942 212.89091952668852) ;
+casUn (257.8576991561236 -58.03122452149857 216.35529445456817) ;
+hubOn (146.42364658674055 -40.67414296161562 395.0000095147512) ;
+casOn (256.4187246134873 -65.28819281118865 395.00000951475124) ;
+
+
+// ------------ END INPUT BLOCK ----------------------- //
+
+
+
+
 // cylindrical system definition: theta (q) = 0 along positive x-axis
 // positive angles moving towards positive y-direction
 // x = r * cos(q)
@@ -55,105 +331,135 @@ zPS 178.07305;
 // This definition means that when looking downstream (down the +ive z-axis),
 // positive theta is CLOCKWISE
 
-xnPerHub #eval{$rMin*cos(degToRad($qMin))};
-ynPerHub #eval{$rMin*sin(degToRad($qMin))};
+// Derived quantities: grading parameters
 
-xpPerHub #eval{$rMin*cos(degToRad($qMax))};
-ypPerHub #eval{$rMin*sin(degToRad($qMax))};
+// Tuples are ( fraction of edge length  |  fraction of cells  |  grading )
+// Use multiple tuples to split up edges into multiple segments
 
-xnPerCas #eval{$rMax*cos(degToRad($qMin))};
-ynPerCas #eval{$rMax*sin(degToRad($qMin))};
+// Overall strategy:
+// Each edge to be split into 2-3 parts.
+// Radially: all blocks split the same way. 3 parts: hub BL, middle part, casing BL
+// Tangentially: all blocks split the same way. 2 parts: lowTheta half, highTheta half
+// 		(Note: for tangential, move cell distribution to uniform at domain inlet/outlet, but should
+//		constrain this so that the variation isn't too large in cases where the inlet/outlet are
+//		close to the LE/TE.)
+// Axially: all blocks split into 2 parts: near LE/TE region and far from LE/TE region
 
-xpPerCas #eval{$rMax*cos(degToRad($qMax))};
-ypPerCas #eval{$rMax*sin(degToRad($qMax))};
+// Since we are using 4 blocks only, the splits of the lengths are based on fractions. However, we
+// can take advantage of the fact that blockMesh automatically normalizes the values given.
+// So we need not actually compute the fractions directly. Instead, we can specify the length
+// of the BL regions (delHub, delCas) and then look at the span at each edge to compute the
+// middle parts (for radial grading). The tangential and axial grading are not based on the
+// BLs, so instead do a split based on a distance from LE/TE that is some given fraction
+// of the chord c (distance bewteen LE and TE points for each blade on hub and casing)
+// then estimate block length (easy since can treat up-/down-stream extensions
+// as straight lines and LE to TE as circular arc segment) to get other section length.
 
-qMid	#eval{0.5*($qMin + $qMax)};
+// Radial grading
+	// Use known BL sizes + spans to determine grading parameters directly
+	// (not a function of circumferential position,
+	// so 8 edge sets needed, each used 2 times)
+	// 4 segments to allow interior grading using nGrad parameter
+radgradingI ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanI-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanI-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
+radgradingK ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanK-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanK-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
+radgradingL ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanL-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanL-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
+radgradingM ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanM-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanM-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
+radgradingP ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanP-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanP-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
+radgradingT ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanT-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanT-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
+radgradingU ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanU-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanU-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
+radgradingO ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanO-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanO-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
 
-xmCas #eval{$rMax*cos(degToRad($qMid))};
-ymCas #eval{$rMax*sin(degToRad($qMid))};
+// Tangential grading
+	// Simpler, just 2 segments to allow symmetric variation in cell sizes
+	// (7 edges needed: I(hub/cas)/L/M/T/O(hub/cas))
+	// Move toward uniform spacing at I and O, but some constraint based
+	// on length imposed.
+tangradingIhub (0.5 0.5 $gTanIhub) (0.5 0.5 #eval{1/$gTanIhub});
+tangradingIcas (0.5 0.5 $gTanIcas) (0.5 0.5 #eval{1/$gTanIcas});
+tangradingL (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
+tangradingM (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
+tangradingT (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
+tangradingOhub (0.5 0.5 $gTanOhub) (0.5 0.5 #eval{1/$gTanOhub});
+tangradingOcas (0.5 0.5 $gTanOcas) (0.5 0.5 #eval{1/$gTanOcas});
 
-xmHub #eval{$rMin*cos(degToRad($qMid))};
-ymHub #eval{$rMin*sin(degToRad($qMid))};
+// Axial grading
+	// 2 segments per block edge, but each one must be computed individually.
+	// So 16 edges needed: hub (H) and casing (C), positive (P) and
+	// negative (N) theta, for each of the 4 blocks.
+	//
+	// For blocks 2 and 3, the values are used for both "axial" edges of the
+	// blade BL blocks (the ones along the blade surface and the ones on the offset)
+axgrading1HP (#eval{max($L1HP-0.5*$cHP,0)} #eval{1-$f1HPclo} $g1HPfar) (#eval{0.5*$cHP} $f1HPclo $g1HPclo);
+axgrading1HN (#eval{max($L1HN-0.5*$cHN,0)} #eval{1-$f1HNclo} $g1HNfar) (#eval{0.5*$cHN} $f1HNclo $g1HNclo);
+axgrading1CP (#eval{max($L1CP-0.5*$cCP,0)} #eval{1-$f1CPclo} $g1CPfar) (#eval{0.5*$cCP} $f1CPclo $g1CPclo);
+axgrading1CN (#eval{max($L1CN-0.5*$cCN,0)} #eval{1-$f1CNclo} $g1CNfar) (#eval{0.5*$cCN} $f1CNclo $g1CNclo);
 
-xLEHub #eval{$rMin*cos(degToRad($qLE))};
-yLEHub #eval{$rMin*sin(degToRad($qLE))};
+axgrading2HP (0.25 $fLEHP $gLEHP) (0.75 #eval{1-$fLEHP} $gM1HP);
+axgrading2HN (0.25 $fLEHN $gLEHN) (0.75 #eval{1-$fLEHN} $gM1HN);
+axgrading2CP (0.25 $fLECP $gLECP) (0.75 #eval{1-$fLECP} $gM1CP);
+axgrading2CN (0.25 $fLECN $gLECN) (0.75 #eval{1-$fLECN} $gM1CN);
 
-xPSHub #eval{$rMin*cos(degToRad($qPS))}; // "along blade" -- value at the PS point (hub)
-yPSHub #eval{$rMin*sin(degToRad($qPS))};
+axgrading3HP (0.75 #eval{1-$fTEHP} $gM2HP) (0.25 $fTEHP $gTEHP);
+axgrading3HN (0.75 #eval{1-$fTEHN} $gM2HN) (0.25 $fTEHN $gTEHN);
+axgrading3CP (0.75 #eval{1-$fTECP} $gM2CP) (0.25 $fTECP $gTECP);
+axgrading3CN (0.75 #eval{1-$fTECN} $gM2CN) (0.25 $fTECN $gTECN);
 
-xSSHub #eval{$rMin*cos(degToRad($qSS))}; // "along blade" -- value at the SS point (hub)
-ySSHub #eval{$rMin*sin(degToRad($qSS))};
-
-xTEHub #eval{$rMin*cos(degToRad($qTE))};
-yTEHub #eval{$rMin*sin(degToRad($qTE))};
-
-xLECas #eval{$rMax*cos(degToRad($qLE))};
-yLECas #eval{$rMax*sin(degToRad($qLE))};
-
-xTECas #eval{$rMax*cos(degToRad($qTE))};
-yTECas #eval{$rMax*sin(degToRad($qTE))};
-
-xPSCas #eval{$rMax*cos(degToRad($qPS))}; // "along blade" -- value at the PS point (casing)
-yPSCas #eval{$rMax*sin(degToRad($qPS))};
-
-xSSCas #eval{$rMax*cos(degToRad($qSS))}; // "along blade" -- value at the SS points (casing)
-ySSCas #eval{$rMax*sin(degToRad($qSS))};
-
-// outlet
-
-xnPerHubO #eval{$rMin*cos(degToRad($qMin))};
-ynPerHubO #eval{$rMin*sin(degToRad($qMin))};
-
-xpPerHubO #eval{$rMin*cos(degToRad($qMax))};
-ypPerHubO #eval{$rMin*sin(degToRad($qMax))};
-
-xnPerCasO #eval{$rMax*cos(degToRad($qMin))};
-ynPerCasO #eval{$rMax*sin(degToRad($qMin))};
-
-xpPerCasO #eval{$rMax*cos(degToRad($qMax))};
-ypPerCasO #eval{$rMax*sin(degToRad($qMax))};
-
-qMidO	#eval{0.5*($qMin + $qMax)};
-
-xmCasO #eval{$rMax*cos(degToRad($qMid))};
-ymCasO #eval{$rMax*sin(degToRad($qMid))};
-
-xmHubO #eval{$rMin*cos(degToRad($qMid))};
-ymHubO #eval{$rMin*sin(degToRad($qMid))};
-
-xLEHubO #eval{$rMin*cos(degToRad($qLE))};
-yLEHubO #eval{$rMin*sin(degToRad($qLE))};
-
-xTEHubO #eval{$rMin*cos(degToRad($qTE))};
-yTEHubO #eval{$rMin*sin(degToRad($qTE))};
-
-xLECasO #eval{$rMax*cos(degToRad($qLE))};
-yLECasO #eval{$rMax*sin(degToRad($qLE))};
-
-xTECasO #eval{$rMax*cos(degToRad($qTE))};
-yTECasO #eval{$rMax*sin(degToRad($qTE))};
+axgrading4HP (#eval{0.5*$cHP} $f4HPclo $g4HPclo) (#eval{max($L4HP-0.5*$cHP,0)} #eval{1-$f4HPclo} $g4HPfar); 
+axgrading4HN (#eval{0.5*$cHN} $f4HNclo $g4HNclo) (#eval{max($L4HN-0.5*$cHN,0)} #eval{1-$f4HNclo} $g4HNfar); 
+axgrading4CP (#eval{0.5*$cCP} $f4CPclo $g4CPclo) (#eval{max($L4CP-0.5*$cCP,0)} #eval{1-$f4CPclo} $g4CPfar); 
+axgrading4CN (#eval{0.5*$cCN} $f4CNclo $g4CNclo) (#eval{max($L4CN-0.5*$cCN,0)} #eval{1-$f4CNclo} $g4CNfar); 
 
 geometry
 {
-    bladeqN
-    {
-        type   triSurfaceMesh;
-        file   "pBlade.stl";
-    }
-    bladeqP
-    {
-        type   triSurfaceMesh;
-        file   "sBlade.stl";
-    }
     casing
     {
         type   triSurfaceMesh;
-        file   "Casing.stl";
+        file   "casing.stl";
+    }
+    casingpUp
+    {
+        type   triSurfaceMesh;
+        file   "highUpCas.stl";
+    }
+    casingpDn
+    {
+        type   triSurfaceMesh;
+        file   "highDwCas.stl";
+    }
+    casingnUp
+    {
+        type   triSurfaceMesh;
+        file   "lowUpCas.stl";
+    }
+    casingnDn
+    {
+        type   triSurfaceMesh;
+        file   "lowDwCas.stl";
     }
     hub
     {
         type   triSurfaceMesh;
-        file   "Hub.stl";
+        file   "hub.stl";
+    }
+    hubpUp
+    {
+        type   triSurfaceMesh;
+        file   "highUpHub.stl";
+    }
+    hubpDn
+    {
+        type   triSurfaceMesh;
+        file   "highDwHub.stl";
+    }
+    hubnUp
+    {
+        type   triSurfaceMesh;
+        file   "lowUpHub.stl";
+    }
+    hubnDn
+    {
+        type   triSurfaceMesh;
+        file   "lowDwHub.stl";
     }
     inlet
     {
@@ -165,20 +471,85 @@ geometry
         type   triSurfaceMesh;
         file   "outlet.stl";
     }
-    nPer
+    nPerUp
     {
        	type   triSurfaceMesh;
-       	file   "pPeriodic.stl";
+       	file   "inletLow.stl";
     }
-    middle
+    pPerUp
     {
        	type   triSurfaceMesh;
-       	file   "mPeriodic.stl";
+       	file   "inletHigh.stl";
     }
-    pPer
+    nPerDn
     {
        	type   triSurfaceMesh;
-       	file   "nPeriodic.stl";
+       	file   "outletLow.stl";
+    }
+    pPerDn
+    {
+       	type   triSurfaceMesh;
+       	file   "outletHigh.stl";
+    }
+    pOBUp
+    {
+       	type   triSurfaceMesh;
+       	file   "highOBUp.stl";
+    }
+    pOBDn
+    {
+       	type   triSurfaceMesh;
+       	file   "highOBDw.stl";
+    }
+    nOBUp
+    {
+       	type   triSurfaceMesh;
+       	file   "lowOBUp.stl";
+    }
+    nOBDn
+    {
+       	type   triSurfaceMesh;
+       	file   "lowOBDw.stl";
+    }
+    nBladeUp
+    {
+       	type   triSurfaceMesh;
+       	file   "blade1LowTheta.stl";
+    }
+    pBladeUp
+    {
+       	type   triSurfaceMesh;
+       	file   "blade1HighTheta.stl";
+    }
+    nBladeDn
+    {
+       	type   triSurfaceMesh;
+       	file   "blade2LowTheta.stl";
+    }
+    pBladeDn
+    {
+       	type   triSurfaceMesh;
+       	file   "blade2HighTheta.stl";
+    }
+    nOffsetUp
+    {
+       	type   triSurfaceMesh;
+       	file   "offset1LowTheta.stl";
+    }
+    pOffsetUp
+    {
+       	type   triSurfaceMesh;
+       	file   "offset1HighTheta.stl";
+    }
+    nOffsetDn
+    {
+       	type   triSurfaceMesh;
+       	file   "offset2LowTheta.stl";
+    }
+    pOffsetDn
+    {
+       	type   triSurfaceMesh;
+       	file   "offset2HighTheta.stl";
     }
     LE
     {
@@ -195,6 +566,16 @@ geometry
     	type	triSurfaceMesh;
     	file 	"midChord.stl";
     }
+    midChordLow
+    {
+    	type	triSurfaceMesh;
+    	file 	"midChordLow.stl";
+    }
+    midChordHigh
+    {
+    	type	triSurfaceMesh;
+    	file 	"midChordHigh.stl";
+    }
 }
 
 vertices
@@ -204,324 +585,491 @@ vertices
 	// x2 = axial (z) dir
 	// x3 = radial dir
 
-	// vertices for upstream block on +q side
-	name vIMH project ($xmHub $ymHub $zMin) (hub inlet middle) // inlet plane, mid Q, hub
-	name vIPH project ($xpPerHub $ypPerHub $zMin) (hub inlet pPer) // inlet plane, max Q, hub
-	name vLPH project ($xpPerHub $ypPerHub $zLE) (hub pPer LE) // LE axial loc, max Q, hub
-	name vLMH project ($xLEHub $yLEHub $zLE) (hub middle LE) // LE axial loc, mid Q, hub
+	// vertices for upstream block
+	name vIPH $hubIp // inlet plane, max Q, hub
+	name vKPH $hubKp // near-LE axial loc, max Q, hub
+	name vIPC $casIp // inlet plane, max Q, cas
+	name vKPC $casKp // near-LE axial loc, max Q, cas
+	name vINH $hubIn // inlet plane, min Q, hub
+	name vKNH $hubKn // (hub nPerUp LE) // near-LE axial loc, min Q, hub
+	name vINC $casIn // inlet plane, min Q, cas
+	name vKNC $casKn // near-LE axial loc, min Q, cas
 
-	name vIMC project ($xmCas $ymCas $zMin) (casing inlet middle) // inlet plane, mid Q, cas
-	name vIPC project ($xpPerCas $ypPerCas $zMin) (casing inlet pPer) // inlet plane, max Q, cas
-	name vLPC project ($xpPerCas $ypPerCas $zLE) (casing pPer LE) // LE axial loc, max Q, cas
-	name vLMC project ($xLECas $yLECas $zLE) (casing middle LE) // LE axial loc, mid Q, cas
+	// vertices for first outer around-blade block
+	// vKPH
+	name vPPH $hubPp // mid-blade point axial loc, max Q, hub
+	// vKPC
+	name vPPC $casPp // mid-blade point axial loc, max Q, cas
+	// vKNH
+	name vPNH $hubPn // mid-blade point axial loc, min Q, hub
+	// vKNC
+	name vPNC $casPn // mid-blade point axial loc, min Q, cas
 
-	// vertices for upstream block on -q side
-	name vINH project ($xnPerHub $ynPerHub $zMin) (hub inlet nPer) // inlet plane, min Q, hub
-	// vIMH
-	// vLMH
-	name vLNH project ($xnPerHub $ynPerHub $zLE) (hub nPer LE) // LE axial loc, min Q, hub
-
-	name vINC project ($xnPerCas $ynPerCas $zMin) (casing inlet nPer) // inlet plane, min Q, cas
-	// vIMC
-	// vLMC
-	name vLNC project ($xnPerCas $ynPerCas $zLE) (casing nPer LE) // LE axial loc, min Q, cas
-
-	// vertices for first around-blade block on +q side
-	// vLMH
-	// vLPH
-	name vPPH project ($xpPerHub $ypPerHub $zPS) (hub pPer midChord) // "PS point" axial loc, max Q, hub
-	name vPMH project ($xPSHub $yPSHub $zPS) (hub bladeqP midChord) // "PS point" axial loc, blade PS point Q, hub
-
-	// vLMC
-	// vLPC
-	name vPPC project ($xpPerCas $ypPerCas $zPS) (casing pPer midChord) // "PS point" axial loc, max Q, cas
-	name vPMC project ($xPSCas $yPSCas $zPS) (casing bladeqP midChord) // "PS point" axial loc, blade PS point Q, cas
-
-	// vertices for first around-blade block on -q side
-	// vLNH
-	// vLMH
-	name vSMH project ($xSSHub $ySSHub $zSS) (hub bladeqN midChord) // "SS point" axial loc, blade PS point Q, hub
-	name vSNH project ($xnPerHub $ynPerHub $zPS) (hub nPer midChord) // "SS point" axial loc, min Q, hub
-
-	// vLNC
-	// vLMC
-	name vSMC project ($xSSCas $ySSCas $zSS) (casing bladeqN midChord) // "SS point" axial loc, blade PS point Q, cas
-	name vSNC project ($xnPerCas $ynPerCas $zPS) (casing nPer midChord) // "SS point" axial loc, min Q, cas
-
-	// vertices for second around-blade block on +q side
-	// vPMH
+	// vertices for first blade BL block on max Q side
+		// "axially": from K to P on one side, L to M on the other
+		// "radially": hub to casing like everything else
+		// "tangentially": from K to L on one side, from P to M on the other
+	// vKPH
 	// vPPH
-	name vTPH project ($xpPerHub $ypPerHub $zTE) (hub pPer TE) // TE axial loc, max Q, hub
-	name vTMH project ($xTEHub $yTEHub $zTE) (hub middle TE) // TE axial loc, mid Q, hub
-	
-	// vPMC
+	name vLPH $hubLp // LE, max Q, hub
+	name vMPH $hubMp // mid-chord, max Q, hub
+	// vKPC
 	// vPPC
-	name vTPC project ($xpPerCas $ypPerCas $zTE) (casing pPer TE) // TE axial loc, max Q, cas
-	name vTMC project ($xTECas $yTECas $zTE) (casing middle TE) // TE axial loc, mid Q, cas
+	name vLPC $casLp // LE, max Q, cas
+	name vMPC $casMp // mid-chord, max Q, cas
 
-	// vertices for second around-blade block on -q side
-	// vSNH
-	// vSMH
-	// vTMH
-	name vTNH project ($xnPerHub $ynPerHub $zTE) (hub nPer TE) // TE axial loc, min Q, hub
+	// vertices for first blade BL block on min Q side
+		// "axially": from K to P on one side, L to M on the other
+		// "radially": hub to casing like everything else
+		// "tangentially": from K to L on one side, from P to M on the other
+	// vKNH
+	// vPNH
+	name vLNH $hubLn // LE, min Q, hub
+	name vMNH $hubMn // mid-chord, min Q, hub
+	// vKNC
+	// vPNC
+	name vLNC $casLn // LE, min Q, cas
+	name vMNC $casMn // mid-chord, min Q, cas
 
-	// vSNC
-	// vSMC
-	// vTMC
-	name vTNC project ($xnPerCas $ynPerCas $zTE) (casing nPer TE) // TE axial loc, min Q, cas
+	// vertices for second outer around-blade block
+	// vPPH
+	name vUPH $hubUp // near-TE axial loc, max Q, hub
+	// vPPC
+	name vUPC $casUp // near-TE axial loc, max Q, cas
+	// vPNH
+	name vUNH $hubUn // near-TE axial loc, min Q, hub
+	// vPNC
+	name vUNC $casUn // near-TE axial loc, min Q, cas
 
-	// vertices for downstream block on +q side
-	// vTMH
-	// vTPH
-	name vOPH project ($xpPerHub $ypPerHub $zMax) (hub pPer outlet) // outlet plane, max Q, hub
-	name vOMH project ($xmHubO $ymHubO $zMax) (hub outlet middle) // outlet plane, mid Q, hub
+	// vertices for second blade BL block on max Q side
+		// "axially": from P to U on one side, M to T on the other
+		// "radially": hub to casing like everything else
+		// "tangentially": from P to M on one side, from U to T on the other
+	// vPPH
+	// vUPH
+	// vMPH
+	name vTPH $hubTp // TE, max Q, hub
+	// vPPC
+	// vUPC
+	// vMPC
+	name vTPC $casTp // TE, max Q, cas
 
-	// vTMC
-	// vTPC
-	name vOPC project ($xpPerCas $ypPerCas $zMax) (casing pPer outlet) // outlet plane, max Q, cas
-	name vOMC project ($xmCasO $ymCasO $zMax) (casing outlet middle) // outlet plane, mid Q, cas
+	// vertices for second blade BL block on min Q side
+		// "axially": from P to U on one side, M to T on the other
+		// "radially": hub to casing like everything else
+		// "tangentially": from P to M on one side, from U to T on the other
+	// vPNH
+	// vUNH
+	// vMNH
+	name vTNH $hubTn // TE, min Q, hub
+	// vPNC
+	// vUNC
+	// vMNC
+	name vTNC $casTn // TE, min Q, cas	
 
-	// vertices for downstream block on -q side
-	// vTNH
-	// vTMH
-	// vOMH
-	name vONH project ($xnPerHub $ynPerHub $zMax) (hub nPer outlet) // outlet plane, min Q, hub
-
-	// vTNC
-	// vTMC
-	// vOMC
-	name vONC project ($xnPerCas $ynPerCas $zMax) (casing nPer outlet) // outlet plane, min Q, cas
-	
+	// vertices for downstream block
+	// vUPH
+	name vOPH $hubOp // outlet plane, max Q, hub
+	// vUPC
+	name vOPC $casOp // outlet plane, max Q, cas
+	// vUNH
+	name vONH $hubOn // outlet plane, min Q, hub
+	// vUNC
+	name vONC $casOn // outlet plane, min Q, cas
 );
 
 blocks
 (
+    hex (vINH vIPH vKPH vKNH vINC vIPC vKPC vKNC) // upstream block
+    ($ntan $nax1 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+//	simpleGrading (1 1 1)
+	edgeGrading
+	(
+		($tangradingIhub)
+		($tangradingL)
+		($tangradingL)
+		($tangradingIcas)
+        ($axgrading1HN)
+		($axgrading1HP)
+		($axgrading1CP)
+		($axgrading1CN)
+        ($radgradingI)
+		($radgradingI)
+		($radgradingL)
+		($radgradingL)
+	)
 
-    hex (vIMH vIPH vLPH vLMH vIMC vIPC vLPC vLMC) // upstream +q block
-    ($qCells $zUCells $rCells)
-	simpleGrading (1 1 1)
-	
-    hex (vINH vIMH vLMH vLNH vINC vIMC vLMC vLNC) // upstream -q block
-    ($qCells $zUCells $rCells)
-    simpleGrading (1 1 1)
+    hex (vKNH vKPH vPPH vPNH vKNC vKPC vPPC vPNC) // first outer around-blade block
+    ($ntan $nax2 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+//	simpleGrading (1 1 1)
+	edgeGrading
+	(
+		($tangradingL)
+		($tangradingM)
+		($tangradingM)
+		($tangradingL)
+        ($axgrading2HNoffset)
+		($axgrading2HPoffset)
+		($axgrading2CPoffset)
+		($axgrading2CNoffset)
+        ($radgradingL)
+		($radgradingL)
+		($radgradingM)
+		($radgradingM)
+	)
 
-    hex (vLMH vLPH vPPH vPMH vLMC vLPC vPPC vPMC) // first around-blade +q block
-    ($qCells $zMCells $rCells)
-	simpleGrading (1 1 1)
-	
-    hex (vLNH vLMH vSMH vSNH vLNC vLMC vSMC vSNC) // first around-blade -q block
-    ($qCells $zMCells $rCells)
-    simpleGrading (1 1 1)
+	hex (vKPH vLPH vMPH vPPH vKPC vLPC vMPC vPPC) // first blade BL block on max Q side
+	($nBLcellsBlade $nax2 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+//	simpleGrading (1 1 1)
+	edgeGrading
+	(
+		(#eval{1/$gBLbla})
+		(#eval{1/$gBLbla})
+		(#eval{1/$gBLbla})
+		(#eval{1/$gBLbla})
+        ($axgrading2HPoffset)
+		($axgrading2HP)
+		($axgrading2CP)
+		($axgrading2CPoffset)
+        ($radgradingL)
+		($radgradingL)
+		($radgradingM)
+		($radgradingM)
+	)
 
-    hex (vPMH vPPH vTPH vTMH vPMC vPPC vTPC vTMC) // second around-blade +q block
-    ($qCells $zMCells $rCells)
-    simpleGrading (1 1 1)
-   	
-    hex (vSNH vSMH vTMH vTNH vSNC vSMC vTMC vTNC) // second around-blade -q block
-    ($qCells $zMCells $rCells)
-    simpleGrading (1 1 1)
+	hex (vLNH vKNH vPNH vMNH vLNC vKNC vPNC vMNC) // first blade BL block on min Q side
+	($nBLcellsBlade $nax2 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+//	simpleGrading (1 1 1)
+	edgeGrading
+	(
+		($gBLbla)
+		($gBLbla)
+		($gBLbla)
+		($gBLbla)
+        ($axgrading2HN)
+		($axgrading2HNoffset)
+		($axgrading2CNoffset)
+		($axgrading2CN)
+        ($radgradingL)
+		($radgradingL)
+		($radgradingM)
+		($radgradingM)
+	)
 
-    hex (vTMH vTPH vOPH vOMH vTMC vTPC vOPC vOMC) // downstream +q block
-    ($qCells $zDCells $rCells)
-	simpleGrading (1 1 1)
-	
-    hex (vTNH vTMH vOMH vONH vTNC vTMC vOMC vONC) // downstream -q block
-    ($qCells $zDCells $rCells)
-    simpleGrading (1 1 1)
+    hex (vPNH vPPH vUPH vUNH vPNC vPPC vUPC vUNC) // second outer around-blade block
+    ($ntan $nax3 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+//	simpleGrading (1 1 1)
+	edgeGrading
+	(
+		($tangradingM)
+		($tangradingT)
+		($tangradingT)
+		($tangradingM)
+        ($axgrading3HNoffset)
+		($axgrading3HPoffset)
+		($axgrading3CPoffset)
+		($axgrading3CNoffset)
+        ($radgradingM)
+		($radgradingM)
+		($radgradingT)
+		($radgradingT)
+	)
+
+	hex (vPPH vMPH vTPH vUPH vPPC vMPC vTPC vUPC) // second blade BL block on max Q side
+	($nBLcellsBlade $nax3 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+//	simpleGrading (1 1 1)
+	edgeGrading
+	(
+		(#eval{1/$gBLbla})
+		(#eval{1/$gBLbla})
+		(#eval{1/$gBLbla})
+		(#eval{1/$gBLbla})
+        ($axgrading3HPoffset)
+		($axgrading3HP)
+		($axgrading3CP)
+		($axgrading3CPoffset)
+        ($radgradingM)
+		($radgradingM)
+		($radgradingT)
+		($radgradingT)
+	)
+
+	// x1 = q dir
+	// x2 = axial (z) dir
+	// x3 = radial dir
+	hex (vMNH vPNH vUNH vTNH vMNC vPNC vUNC vTNC) // second blade BL block on min Q side
+	($nBLcellsBlade $nax3 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+//	simpleGrading (1 1 1)
+	edgeGrading
+	(
+		($gBLbla)
+		($gBLbla)
+		($gBLbla)
+		($gBLbla)
+        ($axgrading3HN)
+		($axgrading3HNoffset)
+		($axgrading3CNoffset)
+		($axgrading3CN)
+        ($radgradingM)
+		($radgradingM)
+		($radgradingT)
+		($radgradingT)
+	)
+
+    hex (vUNH vUPH vOPH vONH vUNC vUPC vOPC vONC) // downstream block
+    ($ntan $nax4 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+//	simpleGrading (1 1 1)
+	edgeGrading
+	(
+		($tangradingT)
+		($tangradingOhub)
+		($tangradingOcas)
+		($tangradingT)
+        ($axgrading4HN)
+		($axgrading4HP)
+		($axgrading4CP)
+		($axgrading4CN)
+        ($radgradingT)
+		($radgradingT)
+		($radgradingO)
+		($radgradingO)	
+	)
 
 );
 
 edges
 (
-	// edges of upstream +q block
-    project vIMH vIPH (hub inlet)
-    project vIPH vLPH (hub pPer)
-    project vLPH vLMH (hub LE)
-    project vLMH vIMH (hub middle)
 
-    project vIMC vIPC (casing inlet)
-    project vIPC vLPC (casing pPer)
-    project vLPC vLMC (casing LE)
-    project vLMC vIMC (casing middle)
+	// edges of upstream block
+    project vINH vIPH (hub inlet)
+    project vIPH vKPH (hub pPerUp)
+    project vKPH vKNH (hub LE)
+    project vKNH vINH (hub nPerUp)
+
+    project vINC vIPC (casing inlet)
+    project vIPC vKPC (casing pPerUp)
+    project vKPC vKNC (casing LE)
+    project vKNC vINC (casing nPerUp)
     
-    project vIMH vIMC (inlet middle)
-    project vIPH vIPC (inlet pPer)
-    project vLPH vLPC (pPer LE)
-    project vLMH vLMC (middle LE)
+    project vIPH vIPC (inlet pPerUp)
+    project vKPH vKPC (pPerUp LE)
+    project vINH vINC (nPerUp inlet)
+    project vKNH vKNC (nPerUp LE)
 
-    // edges of upstream -q block
-    project vINH vIMH (hub inlet)
-    // vIMH vIMC (covered already)
-    project vLMH vLNH (hub LE)
-    project vLNH vINH (hub nPer)
+	// edges of first outer around-blade block
+    project vKPH vPPH (hub pOffsetUp)
+    project vPPH vPNH (hub midChord)
+    project vPNH vKNH (hub nOffsetUp)
+    // vKPH vKNH (covered already)
 
-    project vINC vIMC (casing inlet)
-    // vIMC vLMC (covered already)
-    project vLMC vLNC (casing LE)
-    project vLNC vINC (casing nPer)
+    // vKNC vKPC (covered already)
+    project vKPC vPPC (casing pOffsetUp)
+    project vPPC vPNC (casing midChord)
+    project vPNC vKNC (casing nOffsetUp)
 
-    project vINH vINC (nPer inlet)
-    // vIMH vIMC (covered already)
-    // vLMH vLMC (coveverd already)
-    project vLNH vLNC (nPer LE)
+    // vKPH vKPC (covered already)
+    project vPPH vPPC (pOffsetUp midChord)
+    // vKNH vKNC (covered already)
+    project vPNH vPNC (nOffsetUp midChord)
 
-	// edges of first around-blade +q block
-    // vLMH vLPH (covered already)
-    project vLPH vPPH (hub pPer)
-    project vPPH vPMH (hub midChord)
-    project vPMH vLMH (hub bladeqP)
+	// edges of first blade BL block on max Q side
+	project vKPH vLPH (hubpUp pOBUp)
+	project vPPH vMPH (hubpUp midChordHigh)
+	project vPPC vMPC (casingpUp midChordHigh)
+	project vKPC vLPC (casingpUp pOBUp)
 
-    // vLMC vLPC (covered already)
-    project vLPC vPPC (casing pPer)
-    project vPPC vPMC (casing midChord)
-    project vPMC vLMC (casing bladeqP)
-    
-    // vLMH vLMC (covered already)
-    // vLPH vLPC (covered already)
-    project vPPH vPPC (pPer midChord)
-    project vPMH vPMC (bladeqP midChord)
+	// vKPH vPPH (covered already)
+	project vLPH vMPH (hubpUp pBladeUp)
+	project vLPC vMPC (casingpUp pBladeUp)
+	// vKPC vPPC (covered already)
 
-    // edges of first around-blade -q block
-    // vLNH vLMH (covered already)
-    project vLMH vSMH (hub bladeqN)
-    project vSMH vSNH (hub midChord)
-    project vSNH vLNH (hub nPer)
+	// vKPH vKPC (covered already)
+	project vLPH vLPC (pOBUp pBladeUp)
+	project vMPH vMPC (pBladeUp midChordHigh)
+	// vPPH vPPC (covered already)
 
-    // vLNC vLMC (covered already)
-    project vLMC vSMC (casing bladeqN)
-    project vSMC vSNC (casing midChord)
-    project vSNC vLNC (casing nPer)
+	// edges of first blade BL block on min Q side
+	project vLNH vKNH (hubnUp nOBUp)
+	project vMNH vPNH (hubnUp midChordLow)
+	project vMNC vPNC (casingnUp midChordLow)
+	project vLNC vKNC (casingnUp nOBUp)
 
-    // vLNH vLNC (covered already)
-    // vLMH vLMC (covered already)
-    project vSMH vSMC (bladeqN midChord)
-    project vSNH vSNC (nPer midChord)
+	project vLNH vMNH (hubnUp nBladeUp)
+	// vKNH vPNH (covered already)
+	// vKNC vPNC (covered already)
+	project vLNC vMNC (casingnUp nBladeUp)
 
-	// edges of second around-blade +q block
-    // vPMH vPPH (covered already)
-    project vPPH vTPH (hub pPer)
-    project vTPH vTMH (hub TE)
-    project vTMH vPMH (hub bladeqP)
+	project vLNH vLNC (nOBUp nBladeUp)
+	// vKNH vKNC (covered already)
+	// vPNH vPNC (covered already)
+	project vMNH vMNC (nBladeUp midChordLow)
 
-    // vPMC vPPC (covered already)
-    project vPPC vTPC (casing pPer)
-    project vTPC vTMC (casing TE)
-    project vTMC vPMC (casing bladeqP)
-    
-    // vPMH vPMC (covered already)
+	// edges of second outer around-blade block
+    // vPNH vPPH (covered already)
+    project vPPH vUPH (hub pOffsetDn)
+    project vUPH vUNH (hub TE)
+	project vPNH vUNH (hub nOffsetDn)
+
+    // vPNC vPPC (covered already)
+    project vPPC vUPC (casing pOffsetDn)
+    project vUPC vUNC (casing TE)
+	project vPNC vUNC (casing nOffsetDn)
+
     // vPPH vPPC (covered already)
-    project vTPH vTPC (pPer TE)
-    project vTMH vTMC (middle TE)
+    project vUPH vUPC (pOffsetDn TE)
+    // vPNH vPNC (covered already)
+    project vUNH vUNC (nOffsetDn TE)
 
-    // edges of second around-blade -q block
-    // vSNH vSMH (covered already)
-    project vSMH vTMH (hub bladeqN)
-    project vTMH vTNH (hub TE)
-    project vTNH vSNH (hub nPer)
+	// edges of second blade BL block on max Q side
+	// vPPH vMPH (covered already)
+	project vUPH vTPH (hubpDn pOBDn)
+	project vUPC vTPC (casingpDn pOBDn)
+	// vPPC vMPC (covered already)
 
-    // vSNC vSMC (covered already)
-    project vSMC vTMC (casing bladeqN)
-    project vTMC vTNC (casing TE)
-    project vTNC vSNC (casing nPer)
+	// vPPH vUPH (covered already)
+	project vMPH vTPH (hubpDn pBladeDn)
+	project vMPC vTPC (casingpDn pBladeDn)
+	// vPPC vUPC (covered already)
 
-    // vSNH vSNC (covered already)
-    // vSMH vSMC (covered already)
-    // vTMH vTMC (coveverd already)
-    project vTNH vTNC (nPer TE)
+	// vPPH vPPC (covered already)
+	// vMPH vMPC (covered already)
+	project vTPH vTPC (pOBDn) //(pBladeDn pOBDn) // make equivalent to one for next block that causes problems
+	// vUPH vUPC (covered already)
 
-	// edges of downstream +q block
-    // vTMH vTPH (covered already)
-    project vTPH vOPH (hub pPer)
-    project vOPH vOMH (hub outlet)
-    project vOMH vTMH (hub middle)
+	// edges of second blade BL block on min Q side
+	// vMNH vPNH (covered already)
+	project vTNH vUNH (hubnDn nOBDn)
+	project vTNC vUNC (casingnDn nOBDn)
+	// vMNC vPNC (covered already
 
-    // vTMC vTPC (covered already)
-    project vTPC vOPC (casing pPer)
-    project vOPC vOMC (casing outlet)
-    project vOMC vTMC (casing middle)
+	project vMNH vTNH (hubnDn nBladeDn)
+	// vPNH vUNH (covered already)
+	// vPNC vUNC (covered already)
+	project vMNC vTNC (casingnDn nBladeDn)
+
+	// vMNH vMNC (covered already)
+	// vPNH vPNC (covered already)
+	// vUNH vUNC (covered already)
+	project vTNH vTNC (nOBDn) //(nBladeDn nOBDn) // this one is causing a problem; seems to work if I just do nOBDn
+
+	// edges of downstream block
+    // vUNH vUPH (covered already)
+    project vUPH vOPH (hub pPerDn)
+    project vOPH vONH (hub outlet)
+    project vONH vUNH (hub nPerDn)
+
+    // vUNC vUPC (covered already)
+    project vUPC vOPC (casing pPerDn)
+    project vOPC vONC (casing outlet)
+    project vONC vUNC (casing nPerDn)
     
-    // vTMH vTMC (covered already)
-    // vTPH vTPC (covered already)
-    project vOPH vOPC (pPer outlet)
-    project vOMH vOMC (outlet middle)
-
-    // edges of downstream -q block
-    // vTNH vTMH (covered already)
-    // vTMH vTMC (covered already)
-    project vOMH vONH (hub outlet)
-    project vONH vTNH (hub nPer)
-
-    // vTNC vTMC (covered already)
-    // vTMC vOMC (covered already)
-    project vOMC vONC (casing outlet)
-    project vONC vTNC (casing nPer)
-
-    // vTNH vTNC (covered already)
-    // vTMH vTMC (covered already)
-    // vOMH vOMC (coveverd already)
-    project vONH vONC (nPer outlet)
+    // vUNH vUNC (covered already)
+    // vUPH vUPC (covered already)
+    project vOPH vOPC (pPerDn outlet)
+    project vONH vONC (outlet nPerDn)
 
 );
 
 faces
 (
 
-// axial-normal faces
-	project (vIMH vIPH vIPC vIMC) inlet // +q
-    project (vINH vIMH vIMC vINC) inlet // -q
-	project (vLMH vLPH vLPC vLMC) LE // +q
-	project (vLNH vLMH vLMC vLNC) LE // -q
-    project (vPMC vPMH vPPH vPPC) midChord // +q
-    project (vSMC vSMH vSNH vSNC) midChord // -q
-	project (vTMH vTPH vTPC vTMC) TE // +q
-	project (vTNH vTMH vTMC vTNC) TE // -q
-    project (vOMH vOPH vOPC vOMC) outlet // +q
-    project (vONH vOMH vOMC vONC) outlet // -q
+	// face projections that are disabled (commented out) below are because putting them
+	// in causes failure of periodic matching at a reasonable tolerance. They also aren't
+	// technically needed to form a valid domain which conforms to the goemetry.
+	// To consider commenting out:
+	// upstream end of 1st pos-side BL block
+	// upstream end of 1st neg-side BL block
+	// downstream end of 2nd pos-side BL block
+	// downstream end fo 2nd pos-side BL block
+	// theta-normal(ish):
+	// I-K pos and neg
+	// U-O pos and neg
+
+// axial-normal(ish) faces
+	project (vINH vIPH vIPC vINC) inlet
+//	project (vKPH vLPH vLPC vKPC) pOBUp // upstream end of 1st pos-side BL block
+//	project (vLNH vKNH vKNC vLNC) nOBUp // upstream end of 1st neg-side BL block
+	project (vKNH vKPH vKPC vKNC) LE
+	project (vPNC vPNH vPPH vPPC) midChord
+	project (vMPH vPPH vPPC vMPC) midChordHigh // between 2 pos-side BL blocks
+	project (vPNH vMNH vMNC vPNC) midChordLow // between 2 neg-side BL blocks
+	project (vUNH vUPH vUPC vUNC) TE
+//	project (vUPH vTPH vTPC vUPC) pOBDn // downstream end of 2nd pos-side BL block
+//	project (vTNH vUNH vUNC vTNC) nOBDn // downstream end of 2nd neg-side BL block
+	project (vONH vOPH vOPC vONC) outlet
 
 // theta-normal(ish) faces
-    project (vIPH vLPH vLPC vIPC) pPer // I-L
-    project (vLPH vPPH vPPC vLPC) pPer // L-P
-    project (vPPH vTPH vTPC vPPC) pPer // P-T
-   project (vTPH vOPH vOPC vTPC) pPer // T-O
-	project (vIMH vLMH vLMC vIMC) middle // I-L
-	project (vLMH vSMH vSMC vLMC) bladeqN // L-S
-	project (vSMH vTMH vTMC vSMC) bladeqN // S-T
-	project (vLMH vPMH vPMC vLMC) bladeqP // L-P
-	project (vPMH vTMH vTMC vPMC) bladeqP // P-T
-	project (vTMH vOMH vOMC vTMC) middle // T-O
-    project (vINH vLNH vLNC vINC) nPer // I-L
-    project (vLNH vSNH vSNC vLNC) nPer // L-S
-    project (vSNH vTNH vTNC vSNC) nPer // S-T
-    project (vTNH vONH vONC vTNC) nPer // T-O
+	// pos side
+    project (vIPH vKPH vKPC vIPC) pPerUp // I-K
+    project (vKPH vPPH vPPC vKPC) pOffsetUp // K-P
+    project (vPPH vUPH vUPC vPPC) pOffsetDn // P-U
+    project (vLPH vMPH vMPC vLPC) pBladeUp // L-M
+    project (vMPH vTPH vTPC vMPC) pBladeDn // M-T
+    project (vUPH vOPH vOPC vUPC) pPerDn // U-O
+    // neg side
+    project (vINH vKNH vKNC vINC) nPerUp // I-K
+    project (vKNH vPNH vPNC vKNC) nOffsetUp // K-P
+    project (vPNH vUNH vUNC vPNC) nOffsetDn // P-U
+    project (vLNH vMNH vMNC vLNC) nBladeUp // L-M
+    project (vMNH vTNH vTNC vMNC) nBladeDn // M-T
+    project (vUNH vONH vONC vUNC) nPerDn // U-O
 
 // radial-normal(ish) faces
-    project (vIMH vLMH vLPH vIPH) hub // I-L, q+
-    project (vINH vLNH vLMH vIMH) hub // I-L, q-
-    project (vLMH vPMH vPPH vLPH) hub // L-P
-    project (vPMH vTMH vTPH vPPH) hub // P-T
-    project (vLNH vSNH vSMH vLMH) hub // L-S
-    project (vSNH vTNH vTMH vSMH) hub // S-T
-    project (vTMH vOMH vOPH vTPH) hub // T-O, q+
-    project (vTNH vONH vOMH vTMH) hub // T-O, q-
-    project (vIMC vLMC vLPC vIPC) casing // I-L, q+
-    project (vINC vLNC vLMC vIMC) casing // I-L, q-
-    project (vLMC vPMC vPPC vLPC) casing // L-P
-    project (vPMC vTMC vTPC vPPC) casing // P-T
-    project (vLNC vSNC vSMC vLMC) casing // L-S
-    project (vSNC vTNC vTMC vSMC) casing // S-T
-    project (vTMC vOMC vOPC vTPC) casing // T-O, q+
-    project (vTNC vONC vOMC vTMC) casing // T-O, q-
+	// hub
+    project (vINH vKNH vKPH vIPH) hub // I-K
+    project (vKPH vPPH vMPH vLPH) hubpUp // BL 1 pos
+    project (vPPH vUPH vTPH vMPH) hubpDn // BL 2 pos
+    project (vKNH vPNH vPPH vKPH) hub // K-P
+    project (vPNH vUNH vUPH vPPH) hub // P-U
+    project (vLNH vMNH vPNH vKNH) hubnUp // BL 1 neg
+    project (vMNH vTNH vUNH vPNH) hubnDn // BL 2 neg
+    project (vUNH vONH vOPH vUPH) hub // U-O
+    // casing
+    project (vINC vKNC vKPC vIPC) casing // I-K
+    project (vKPC vPPC vMPC vLPC) casingpUp // BL 1 pos
+    project (vPPC vUPC vTPC vMPC) casingpDn // BL 2 pos
+    project (vKNC vPNC vPPC vKPC) casing // K-P
+    project (vPNC vUNC vUPC vPPC) casing // P-U
+    project (vLNC vMNC vPNC vKNC) casingnUp // BL 1 neg
+    project (vMNC vTNC vUNC vPNC) casingnDn // BL 2 neg
+    project (vUNC vONC vOPC vUPC) casing // U-O
+
 );
+
+// Use new simpler specification
+// (block_number face_index)
+// face indices:
+// 0 == x1 min
+// 1 == x1 max
+// 2 == x2 min
+// 3 == x2 max
+// 4 == x3 min
+// 5 == x3 max
+//
+// recalling here that:
+// x1 = q dir
+// x2 = axial (z) dir
+// x3 = radial dir
+//
+// block list:
+// 0 == upstream block
+// 1 == first outer around-blade block
+// 2 == first blade BL block on max Q side
+// 3 == first blade BL block on min Q side
+// 4 == second outer around-blade block
+// 5 == second blade BL block on max Q side
+// 6 == second blade BL block on min Q side
+// 7 == downstream block
 
 boundary
 (
+
     inlet
     {
         type patch;
         faces
         (
-            (vIMH vIPH vIPC vIMC)
-            (vINH vIMH vIMC vINC)
+            (0 2)
         );
     }
 
@@ -530,8 +1078,7 @@ boundary
         type patch;
         faces
         (
-            (vOMH vOPH vOPC vOMC)
-            (vONH vOMH vOMC vONC)
+            (7 3)
         );
     }
 
@@ -540,10 +1087,10 @@ boundary
         type patch;
         faces
         (
-    		(vIPH vLPH vLPC vIPC)
-    		(vLPH vPPH vPPC vLPC)
-    		(vPPH vTPH vTPC vPPC)
-    		(vTPH vOPH vOPC vTPC)
+    		(0 1)
+    		(2 2)
+    		(5 3)
+    		(7 1)
         );
     }
 
@@ -552,10 +1099,10 @@ boundary
         type patch;
         faces
         (
-			(vINH vLNH vLNC vINC)
-    		(vLNH vSNH vSNC vLNC)
-    		(vSNH vTNH vTNC vSNC)
-    		(vTNH vONH vONC vTNC)
+    		(0 0)
+    		(3 2)
+    		(6 3)
+    		(7 0)
         );
     }
 
@@ -564,14 +1111,14 @@ boundary
         type wall;
         faces
         (
-    		(vIMH vLMH vLPH vIPH)
-	   		(vINH vLNH vLMH vIMH)
-    		(vLMH vPMH vPPH vLPH)
-    		(vPMH vTMH vTPH vPPH)
-    		(vLNH vSNH vSMH vLMH)
-    		(vSNH vTNH vTMH vSMH)
-	   		(vTMH vOMH vOPH vTPH)
-    		(vTNH vONH vOMH vTMH)
+	   		(0 4)
+	   		(1 4)
+	   		(2 4)
+	   		(3 4)
+	   		(4 4)
+	   		(5 4)
+	   		(6 4)
+	   		(7 4)
         );
     }
 
@@ -580,14 +1127,14 @@ boundary
         type wall;
         faces
         (
-			(vIMC vLMC vLPC vIPC)
-    		(vINC vLNC vLMC vIMC)
-    		(vLMC vPMC vPPC vLPC)
-    		(vPMC vTMC vTPC vPPC)
-    		(vLNC vSNC vSMC vLMC)
-    		(vSNC vTNC vTMC vSMC)
-    		(vTMC vOMC vOPC vTPC)
-	    	(vTNC vONC vOMC vTMC)
+	   		(0 5)
+	   		(1 5)
+	   		(2 5)
+	   		(3 5)
+	   		(4 5)
+	   		(5 5)
+	   		(6 5)
+	   		(7 5)
         );
     }
 
@@ -596,10 +1143,10 @@ boundary
     	type wall;
     	faces
     	(
-    		(vLMH vSMH vSMC vLMC)
-    		(vSMH vTMH vTMC vSMC)
-    		(vLMH vPMH vPMC vLMC)
-    		(vPMH vTMH vTMC vPMC)
+			(2 1)
+			(5 1)
+			(3 0)
+			(6 0)
     	);
     }
 

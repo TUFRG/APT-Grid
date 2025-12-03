@@ -15,12 +15,21 @@ FoamFile
 
 solvers
 {
+    cellDisplacement
+    {
+        solver          PCG;
+        preconditioner  DIC;
+        tolerance       1e-08;
+        relTol          0;
+        minIter			10;
+    }
+
     p
     {
         solver          GAMG;
-        smoother        GaussSeidel;
-        tolerance       1e-6;
-        relTol          0.01;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0.05; //0.1 = orig, 0.05 worked well
     }
 
     pFinal
@@ -29,31 +38,50 @@ solvers
         relTol          0;
     }
 
-    "(rho|U|k|omega|e)"
+    "(rho|U|k|omega|epsilon)"
+    {
+        solver          PBiCGStab;
+        preconditioner  DILU;
+        tolerance       1e-8;
+        relTol          0.0;
+    }
+
+    UFinal
     {
         solver          PBiCGStab;
         preconditioner  DILU;
         tolerance       1e-6;
-        relTol          0.1;
-    }
-
-    "(rho|U|k|omega|e)Final"
-    {
-        $U;
         relTol          0;
     }
-}
 
-SIMPLE
-{
-    residualControl
+    kFinal
     {
-        p               1e-4;
-        U               1e-4;
-        "(k|omega|e)"   1e-4;
+        solver          PBiCGStab;
+        preconditioner  DILU;
+        tolerance       1e-6;
+        relTol          0;
     }
 
-    nNonOrthogonalCorrectors 0;
+    omegaFinal
+    {
+        solver          PBiCGStab;
+        preconditioner  DILU;
+        tolerance       1e-6;
+        relTol          0;
+    }
+
+}
+SIMPLE
+{
+	consistent yes;
+    residualControl
+    {
+        p               1e-4; //e-4
+        U               1e-4; //e-4
+        "(k|omega|e)"   1e-4; //e-4
+    }
+
+    nNonOrthogonalCorrectors 3; // 3 = orig
 }
 
 PIMPLE
@@ -65,9 +93,14 @@ PIMPLE
 
 relaxationFactors
 {
+	fields
+	{
+		p 1;
+	}
     equations
     {
-        ".*"     1;
+		U 0.9;
+		"(k|omega|epsilon)" 0.7;
     }
 }
 

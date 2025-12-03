@@ -23,13 +23,17 @@ startTime       0;
 
 stopAt          endTime;
 
-endTime         1000;
+endTime         60;
 
 deltaT          1;
 
+adjustTimeStep yes;
+
+maxCo            1;
+
 writeControl    runTime;
 
-writeInterval   25;
+writeInterval   10;
 
 purgeWrite      1;
 
@@ -43,5 +47,56 @@ timePrecision   8;
 
 runTimeModifiable yes;
 
+
+functions
+{
+	yPlus
+	{
+		type yPlus;
+		libs ( fieldFunctionObjects );
+		writeFields yes;
+		executeControl writeTime;
+		writeControl writeTime;
+	}
+
+	inletFlux
+	{
+		type            surfaceFieldValue;
+		libs            ("libfieldFunctionObjects.so");
+		enabled         true;
+		log             true;
+		writeFields     yes;
+		executeControl  writeTime;
+		writeControl    writeTime;
+		surfaceFormat   raw;  
+		regionType      patch;
+		name            inlet;
+		operation       sum;
+		fields
+		(
+			phi
+		);
+	}
+
+	outletFlux
+	{
+		type            surfaceFieldValue;
+		libs            ("libfieldFunctionObjects.so");
+		enabled         true;
+		log             true;
+		writeFields     yes;
+		executeControl  writeTime;
+		writeControl    writeTime;
+		surfaceFormat   raw; 
+		regionType      patch;
+		name            outlet;
+		operation       sum;
+		fields
+		(
+			phi
+		);
+	}
+
+}
 
 // ************************************************************************* //
