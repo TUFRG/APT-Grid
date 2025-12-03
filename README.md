@@ -23,4 +23,4 @@ Open issues:
 
 2. No testing has been conducted on other geometries. Need to test on Justin's ECL5 stator and IGV.
 
-3. Current code doesn't have full integration of multiple passage meshing for aperiodic blade rows. Main thing to sort out here is that the code is piecemeal; once all functionality in Python is integrated into a single code, it is _hoped_ that the way everything has been set up will ensure that aperiodic passages are conformal geometrically and for all mesh points on shared patches.
+3. Current code doesn't have full integration of multiple passage meshing for aperiodic blade rows. It is _hoped_ that the way everything has been set up will ensure that aperiodic passages are conformal geometrically and for all mesh points on shared patches.
