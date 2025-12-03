@@ -54,8 +54,8 @@ bladeRes = 400  #Increase resolution of underlying blade data
 Nr = 2*N  #number of points on blade profiles increased 
 delta = 2.0  #boundary layer thickness 
 percentVal = 0.04  # fraction of arclength of blades where we cut off to avoid odd cell sizes in blade-to-offset BL blocks
-percentValNonCut = 0.02  # fraction of arclength of blades where we cut off to avoid higghly non-orthogonal cells in blade-to-offset BL blocks
-
+percentValNonCutLE = 0.02  # fraction of arclength of blades where we cut off to avoid higghly non-orthogonal cells in blade-to-offset BL blocks (LE)
+percentValNonCutTE = 0.00  # fraction of arclength of blades where we cut off to avoid higghly non-orthogonal cells in blade-to-offset BL blocks (TE)
 # Values to constrain cross-passage and offset curves to avoid problems:
 angConstraintCurves = 10  # deg
 angConstraintOffsets = 1  # deg
@@ -1935,19 +1935,19 @@ for m in range(newNsection):
         percentLowH1 = np.array([(lowHub1OffsetPtAngle1 < 90),(lowHub1OffsetPtAngle2 < 90)])*percentVal
         lowHub1 = curveFrac(bladeL1Pt, offsetOrigL1Pt, lowHub1OffsetPt, percentLowH1).T
         lowHub1[0,1] = 0.0
-        lowHub1 = cutArcLenMaps(lowHub1, lower_bound=percentValNonCut, upper_bound=1.0)
+        lowHub1 = cutArcLenMaps(lowHub1, lower_bound=percentValNonCutLE, upper_bound=1.0)
         percentLowH2 = np.array([(lowHub2OffsetPtAngle1 < 90),(lowHub2OffsetPtAngle2 < 90)])*percentVal
         lowHub2 = curveFrac(bladeL2Pt, offsetOrigL2Pt, lowHub2OffsetPt, percentLowH2).T
         lowHub2[0,1] = 0.0
-        lowHub2 = cutArcLenMaps(lowHub2, lower_bound=0.0, upper_bound=1.0-percentValNonCut)
+        lowHub2 = cutArcLenMaps(lowHub2, lower_bound=0.0, upper_bound=1.0-percentValNonCutTE)
         percentHighH1 = np.array([(highHub1OffsetPtAngle1 < 90),(highHub1OffsetPtAngle2 < 90)])*percentVal
         highHub1 = curveFrac(bladeH1Pt, offsetOrigH1Pt, highHub1OffsetPt, percentHighH1).T
         highHub1[0,1] = 0.0
-        highHub1 = cutArcLenMaps(highHub1, lower_bound=percentValNonCut, upper_bound=1.0)
+        highHub1 = cutArcLenMaps(highHub1, lower_bound=percentValNonCutLE, upper_bound=1.0)
         percentHighH2 = np.array([(highHub2OffsetPtAngle1 < 90),(highHub2OffsetPtAngle2 < 90)])*percentVal
         highHub2 = curveFrac(bladeH2Pt, offsetOrigH2Pt, highHub2OffsetPt, percentHighH2).T
         highHub2[0,1] = 0.0
-        highHub2 = cutArcLenMaps(highHub2, lower_bound=0.0, upper_bound=1.0-percentValNonCut)
+        highHub2 = cutArcLenMaps(highHub2, lower_bound=0.0, upper_bound=1.0-percentValNonCutTE)
        
     elif i == newNsection - 1:
         mBladeH1 = cosineSpace(bladeRes+1, blade1SS2D[i][0,0], ssInterX[0]) #upstream portion of the high theta blade
@@ -2030,19 +2030,19 @@ for m in range(newNsection):
         percentLowH1 = np.array([(lowCas1OffsetPtAngle1 < 90),(lowCas1OffsetPtAngle2 < 90)])*percentVal
         lowCas1 = curveFrac(bladeL1Pt, offsetOrigL1Pt, lowCas1OffsetPt, percentLowH1).T
         lowCas1[0,1] = 0.0
-        lowCas1 = cutArcLenMaps(lowCas1, lower_bound=percentValNonCut, upper_bound=1.0)
+        lowCas1 = cutArcLenMaps(lowCas1, lower_bound=percentValNonCutLE, upper_bound=1.0)
         percentLowH2 = np.array([(lowCas2OffsetPtAngle1 < 90),(lowCas2OffsetPtAngle2 < 90)])*percentVal
         lowCas2 = curveFrac(bladeL2Pt, offsetOrigL2Pt, lowCas2OffsetPt, percentLowH2).T
         lowCas2[0,1] = 0.0
-        lowCas2 = cutArcLenMaps(lowCas2, lower_bound=0.0, upper_bound=1.0-percentValNonCut)
+        lowCas2 = cutArcLenMaps(lowCas2, lower_bound=0.0, upper_bound=1.0-percentValNonCutTE)
         percentHighH1 = np.array([(highCas1OffsetPtAngle1 < 90),(highCas1OffsetPtAngle2 < 90)])*percentVal
         highCas1 = curveFrac(bladeH1Pt, offsetOrigH1Pt, highCas1OffsetPt, percentHighH1).T
         highCas1[0,1] = 0.0
-        highCas1 = cutArcLenMaps(highCas1, lower_bound=percentValNonCut, upper_bound=1.0)
+        highCas1 = cutArcLenMaps(highCas1, lower_bound=percentValNonCutLE, upper_bound=1.0)
         percentHighH2 = np.array([(highCas2OffsetPtAngle1 < 90),(highCas2OffsetPtAngle2 < 90)])*percentVal
         highCas2 = curveFrac(bladeH2Pt, offsetOrigH2Pt, highCas2OffsetPt, percentHighH2).T       
         highCas2[0,1] = 0.0 
-        highCas2 = cutArcLenMaps(highCas2, lower_bound=0.0, upper_bound=1.0-percentValNonCut)
+        highCas2 = cutArcLenMaps(highCas2, lower_bound=0.0, upper_bound=1.0-percentValNonCutTE)
 
 #%%
 #np.savetxt(dataPath + '/lowHub1.txt', lowHub1, delimiter=',')
