@@ -5,7 +5,7 @@ Structured grid generator for turbomachinery blade passages
 
 Everything has now been combined to a single script, scriptRev14.py.
 
-Once fixed, simply run:
+Simply run:
 python scriptRev14.py
 or:
 ipython
