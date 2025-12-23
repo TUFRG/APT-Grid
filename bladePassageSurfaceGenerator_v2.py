@@ -1220,26 +1220,26 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
                 lowHub1OffsetPt[ii+1] = mf.TwoLinesIntersect(lineL1, offsetSplinedBlade22D[i])
                 lowHub2OffsetPt[ii+1] = mf.TwoLinesIntersect(lineL2, offsetSplinedBlade22D[i])
             highHub1OffsetPt[0] = curve1[0] #Insert the first point on the offset curve
-            highHub1OffsetPt[-1] = offsetBlade12D[i][2] # insert the mid point of the offset curve 
-            highHub2OffsetPt[0] = offsetBlade12D[i][2] #insert mid point of the offset curve as the last point
+            highHub1OffsetPt[-1] = offsetVertices1mpt[i][2] # insert the mid point of the offset curve 
+            highHub2OffsetPt[0] = offsetVertices1mpt[i][2] #insert mid point of the offset curve as the last point
             highHub2OffsetPt[-1] = curve1[-1]
             
             lowHub1OffsetPt[0] = curve2[0]
-            lowHub1OffsetPt[-1] = offsetBlade22D[i][1]
-            lowHub2OffsetPt[0] = offsetBlade22D[i][1]  
+            lowHub1OffsetPt[-1] = offsetVertices2mpt[i][1]
+            lowHub2OffsetPt[0] = offsetVertices2mpt[i][1]  
             lowHub2OffsetPt[-1] = curve2[-1]
             
             #Now find the angle to determine the points to ignore
             
             lowHub1OffsetPtAngle1 =  mf.find_angle(offsetSplinedBlade22D[i][0], bladeL1Pt[0], bladeL1Pt[1]) #Angle at LE
-            lowHub1OffsetPtAngle2 =  mf.find_angle(offsetBlade22D[i][1], bladeL1Pt[-1], bladeL1Pt[-2]) #Angle at Mid
+            lowHub1OffsetPtAngle2 =  mf.find_angle(offsetVertices2mpt[i][1], bladeL1Pt[-1], bladeL1Pt[-2]) #Angle at Mid
             lowHub2OffsetPtAngle1 =  mf.find_angle(offsetSplinedBlade22D[i][-1], bladeL2Pt[-1], bladeL2Pt[-2]) #Angle at TE
-            lowHub2OffsetPtAngle2 =  mf.find_angle(offsetBlade22D[i][1], bladeL2Pt[0], bladeL2Pt[1]) #Angle at Mid
+            lowHub2OffsetPtAngle2 =  mf.find_angle(offsetVertices2mpt[i][1], bladeL2Pt[0], bladeL2Pt[1]) #Angle at Mid
             
             highHub1OffsetPtAngle1 = mf.find_angle(offsetSplinedBlade12D[i][0], bladeH1Pt[0], bladeH1Pt[1]) #Angle at LE
-            highHub1OffsetPtAngle2 = mf.find_angle(offsetBlade12D[i][2], bladeH1Pt[-1], bladeH1Pt[-2]) #Angle at Mid
+            highHub1OffsetPtAngle2 = mf.find_angle(offsetVertices1mpt[i][2], bladeH1Pt[-1], bladeH1Pt[-2]) #Angle at Mid
             highHub2OffsetPtAngle1 = mf.find_angle(offsetSplinedBlade12D[i][-1], bladeH2Pt[-1], bladeH2Pt[-2]) #Angle at TE
-            highHub2OffsetPtAngle2 = mf.find_angle(offsetBlade12D[i][2], bladeH2Pt[0], bladeH2Pt[1]) #Angle at Mid    
+            highHub2OffsetPtAngle2 = mf.find_angle(offsetVertices1mpt[i][2], bladeH2Pt[0], bladeH2Pt[1]) #Angle at Mid    
             
             #Now decide on which offset to truncate points from based on angle less than 90 degrees
             #This metric I am using will change later one but choose based on 4% for now!      
@@ -1261,10 +1261,10 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
             highHub2 = cutArcLenMaps(highHub2, lower_bound=0.0, upper_bound=1.0-percentValNonCutTE)
            
         elif i == newNsection - 1:
-            mBladeH1 = cosineSpace(bladeRes+1, blade1SS2D[i][0,0], ssInterX[0]) #upstream portion of the high theta blade
-            mBladeH2 = cosineSpace(bladeRes+1, ssInterX[0], blade1SS2D[i][-1,0]) #downstream portion of the high theta blade
-            mBladeL1 = cosineSpace(bladeRes+1, blade2PS2D[i][0,0], ps2InterX[0]) #upstream portion of the low theta blade
-            mBladeL2 = cosineSpace(bladeRes+1, ps2InterX[0], blade2PS2D[i][-1,0]) #downstream portion of the low theta blade 
+            mBladeH1 = cosineSpace(bladeRes+1, blade1nmpt[i][0,0], ssInterX[0]) #upstream portion of the high theta blade
+            mBladeH2 = cosineSpace(bladeRes+1, ssInterX[0], blade1nmpt[i][-1,0]) #downstream portion of the high theta blade
+            mBladeL1 = cosineSpace(bladeRes+1, blade2pmpt[i][0,0], ps2InterX[0]) #upstream portion of the low theta blade
+            mBladeL2 = cosineSpace(bladeRes+1, ps2InterX[0], blade2pmpt[i][-1,0]) #downstream portion of the low theta blade 
             thBladeH1 = blade1Func(mBladeH1)
             thBladeH2 = blade1Func(mBladeH2)
             thBladeL1 = blade2Func(mBladeL1)
@@ -1317,26 +1317,26 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
                 lowCas1OffsetPt[ii+1] = mf.TwoLinesIntersect(lineL1, offsetSplinedBlade22D[i])
                 lowCas2OffsetPt[ii+1] = mf.TwoLinesIntersect(lineL2, offsetSplinedBlade22D[i])
             highCas1OffsetPt[0] = curve1[0] #Insert the first point on the offset curve
-            highCas1OffsetPt[-1] = offsetBlade12D[i][2] # insert the mid point of the offset curve 
-            highCas2OffsetPt[0] = offsetBlade12D[i][2] #insert mid point of the offset curve as the last point
+            highCas1OffsetPt[-1] = offsetVertices1mpt[i][2] # insert the mid point of the offset curve 
+            highCas2OffsetPt[0] = offsetVertices1mpt[i][2] #insert mid point of the offset curve as the last point
             highCas2OffsetPt[-1] = curve1[-1]
             
             lowCas1OffsetPt[0] = curve2[0]
-            lowCas1OffsetPt[-1] = offsetBlade22D[i][1]
-            lowCas2OffsetPt[0] = offsetBlade22D[i][1]  
+            lowCas1OffsetPt[-1] = offsetVertices2mpt[i][1]
+            lowCas2OffsetPt[0] = offsetVertices2mpt[i][1]  
             lowCas2OffsetPt[-1] = curve2[-1]
             
             #Now find the angle to determine the points to ignore
             
             lowCas1OffsetPtAngle1 =  mf.find_angle(offsetSplinedBlade22D[i][0], bladeL1Pt[0], bladeL1Pt[1]) #Angle at LE
-            lowCas1OffsetPtAngle2 =  mf.find_angle(offsetBlade22D[i][1], bladeL1Pt[-1], bladeL1Pt[-2]) #Angle at Mid
+            lowCas1OffsetPtAngle2 =  mf.find_angle(offsetVertices2mpt[i][1], bladeL1Pt[-1], bladeL1Pt[-2]) #Angle at Mid
             lowCas2OffsetPtAngle1 =  mf.find_angle(offsetSplinedBlade22D[i][-1], bladeL2Pt[-1], bladeL2Pt[-2]) #Angle at TE
-            lowCas2OffsetPtAngle2 =  mf.find_angle(offsetBlade22D[i][1], bladeL2Pt[0], bladeL2Pt[1]) #Angle at Mid
+            lowCas2OffsetPtAngle2 =  mf.find_angle(offsetVertices2mpt[i][1], bladeL2Pt[0], bladeL2Pt[1]) #Angle at Mid
     
             highCas1OffsetPtAngle1 = mf.find_angle(offsetSplinedBlade12D[i][0], bladeH1Pt[0], bladeH1Pt[1]) #Angle at LE
-            highCas1OffsetPtAngle2 = mf.find_angle(offsetBlade12D[i][2], bladeH1Pt[-1], bladeH1Pt[-2]) #Angle at Mid
+            highCas1OffsetPtAngle2 = mf.find_angle(offsetVertices1mpt[i][2], bladeH1Pt[-1], bladeH1Pt[-2]) #Angle at Mid
             highCas2OffsetPtAngle1 = mf.find_angle(offsetSplinedBlade12D[i][-1], bladeH2Pt[-1], bladeH2Pt[-2]) #Angle at TE
-            highCas2OffsetPtAngle2 = mf.find_angle(offsetBlade12D[i][2], bladeH2Pt[0], bladeH2Pt[1]) #Angle at Mid   
+            highCas2OffsetPtAngle2 = mf.find_angle(offsetVertices1mpt[i][2], bladeH2Pt[0], bladeH2Pt[1]) #Angle at Mid   
             
             percentLowH1 = np.array([(lowCas1OffsetPtAngle1 < 90),(lowCas1OffsetPtAngle2 < 90)])*percentVal
             lowCas1 = curveFrac(bladeL1Pt, offsetOrigL1Pt, lowCas1OffsetPt, percentLowH1).T
