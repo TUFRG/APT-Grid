@@ -10,7 +10,7 @@ Authors:
     Tony Woo
     Jeff Defoe
 Started in 2024
-Active development ongoing as of December 2025
+Active development ongoing as of January 2026
 """
 
 import sys
@@ -1037,10 +1037,6 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         # 5) generate the offset curves
         # 6) do arclength mapping between blades and offsets
 
-        # JD: UP TO HERE -- this mostly runs, having swapped
-        # blade 1/2 internally. But still getting some errors
-        # which need checking, see ipdb.
-
         # 1) get points
         offsetBlade1LEpt = offsetVertices1mpt[m][0]
         offsetBlade2LEpt = offsetVertices2mpt[m][0]
@@ -1364,13 +1360,121 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
             blade2casUpArclenmap = highCas1
             blade2casDnArclenmap = highCas2
 
-            dff = bob(tst) # JD: here to make it crash
-
     return (LECurveRot, TECurveRot, offsetSplinedBlade22D, offsetSplinedBlade12D,
             blade1hubUpArclenmap, blade1hubDnArclenmap,
             blade1casUpArclenmap, blade1casDnArclenmap,
             blade2hubUpArclenmap, blade2hubDnArclenmap,
             blade2casUpArclenmap, blade2casDnArclenmap)
+
+
+def mptToCyl(arrmpt, upstreamMprime, blade1PMprime, downstreamMprime, hub, cas):
+    """
+    Take an array in m'-theta and convert to cylindrical coordinates
+    """
+    newNsection = arrmpt.shape[0]
+
+    # steps:
+    # 1. get a continuous array from inlet to outlet of (r, z, m')
+    # 2. construct a cubic spline interpolant with m' data as the 'x' and z data as 'y'
+    # 3. use interpolant to create z data for arr from arr's m' data
+    # 4. construct a cubic spline interpolant with z data as the 'x' and r data as 'y'; use hub/cas data for extremes
+    # 5. user interpolantt o create r data for arr from interpoalted z data
+    # 6. assemble into arrCyl (theta, r, z)
+
+    arrCyl = np.zeros((arrmpt.shape[0], arrmpt.shape[1], 3))
+    for p in range(newNsection):
+        fullMprime = np.concatenate((upstreamMprime[p][:-1], blade1PMprime[p], downstreamMprime[p][1:]))
+        funcZ = CubicSpline(fullMprime[:, 3], fullMprime[:, 2])
+        arrZ = funcZ(arrmpt[p, :, 0])
+
+        fullR = np.concatenate((upstreamMprime[p][:-1], blade1PMprime[p], downstreamMprime[p][1:])) 
+        # special treatment for hub/casing to ensure
+        # points lie on hub/casing
+        if p == 0:  # hub
+            funcR = CubicSpline(hub[:, 1], hub[:, 0])
+        elif p == newNsection-1:  # casing
+            funcR = CubicSpline(cas[:, 1], cas[:, 0])
+        else:
+            funcR = CubicSpline(fullR[:, 2], fullR[:, 1])
+        arrR = funcR(arrZ)
+        arrCyl[p][:, 0] = arrmpt[p][:, 1]
+        arrCyl[p][:, 1] = arrR
+        arrCyl[p][:, 2] = arrZ
+
+    return arrCyl
+
+
+def bladeToOffset(pt1, pt2, res):
+    """
+    Create a new curve via interpolation between two points
+    (with 'res' points total)
+    Z coordinate of pt2 must be < Z coordinate of pt1
+    pt1 and pt2 are assumed to have nNewSections sets of points
+    """
+    # JD: note: need to fix -- interpolating r data this way isn't good on hub/casing
+    # do it like it's done in the trim function and the mptToCyl function instead
+    newNsection = pt1.shape[0]
+    curve = np.zeros([newNsection, res, 3])
+    for p in range(newNsection):
+        z = np.linspace(pt1[p][2], pt2[p][2], res)
+        xinterp = np.array([pt1[p][2], pt2[p][2]])
+        yinterp = np.array([pt1[p][0:2], pt2[p][0:2]])
+        func1 = interp1d(xinterp, yinterp, axis=0)
+        curve[p][:, 2] = z
+        curve[p][:, 0:2] = func1(z)
+    return curve
+
+
+def trimAndRefineExt(extCyl, res, mul, endZ, keep, hub, cas):
+    """
+    trims an extension to the endZ values, keeping
+    either the extCyl Z values >= endZ ('hi') or
+    the extCyl Z values <= endZ ('lo')
+    'hi' used for upstream extensions
+    'lo' used for downstream extensions
+    """
+    newNsection = len(endZ)
+    trimmedExtCyl = np.zeros([newNsection, res*mul, 3])
+    if keep == "hi":
+        for p in range(newNsection):
+            # pol variables were (z, theta)
+            func1 = interp1d(extCyl[p, :, 2], extCyl[p, :, 0], fill_value="extrapolate")
+            zTrimmed = np.linspace(endZ[p], extCyl[p, -2, 2], mul*res)
+            thTrimmed = func1(zTrimmed)
+            fullR = extCyl[p, 0:-1, 1:]
+            # special treatment for hub/casing to ensure
+            # points lie on hub/casing
+            if p == 0:  # hub
+                funcR = CubicSpline(hub[:, 1], hub[:, 0])
+            elif p == newNsection-1:  # casing
+                funcR = CubicSpline(cas[:, 1], cas[:, 0])
+            else:
+                funcR = CubicSpline(fullR[:, 1], fullR[:, 0])
+            rTrimmed = funcR(zTrimmed)
+            trimmedExtCyl[p, :, 0] = thTrimmed
+            trimmedExtCyl[p, :, 1] = rTrimmed
+            trimmedExtCyl[p, :, 2] = zTrimmed
+    elif keep == "lo":
+        for p in range(newNsection):
+            # pol variables were (z, theta)
+            func1 = interp1d(extCyl[p, :, 2], extCyl[p, :, 0], fill_value="extrapolate")
+            zTrimmed = np.linspace(extCyl[p, 1, 2], endZ[p], mul*res)
+            thTrimmed = func1(zTrimmed)
+            fullR = extCyl[p, 1:, 1:]
+            # special treatment for hub/casing to ensure
+            # points lie on hub/casing
+            if p == 0:  # hub
+                funcR = CubicSpline(hub[:, 1], hub[:, 0])
+            elif p == newNsection-1:  # casing
+                funcR = CubicSpline(cas[:, 1], cas[:, 0])
+            else:
+                funcR = CubicSpline(fullR[:, 1], fullR[:, 0])
+            rTrimmed = funcR(zTrimmed)
+            trimmedExtCyl[p, :, 0] = thTrimmed
+            trimmedExtCyl[p, :, 1] = rTrimmed
+            trimmedExtCyl[p, :, 2] = zTrimmed
+
+    return trimmedExtCyl
 
 
 def cutArcLenMaps(arr, lower_bound=0.0, upper_bound=1.0):
@@ -2906,9 +3010,10 @@ def main() -> int:
     """ END INPUTS """
     
     # STL definition inputs, typically do not need to be modified:
-    res = 30  #upstream and downstream extention resolution 
+    res = 30  # upstream and downstream extention resolution 
     passageRes = 360  # Resolution of points for a single passage 
-    bladeRes = 400  #Increase resolution of underlying blade data 
+    bladeRes = 400  # Increase resolution of underlying blade data 
+    mul = 5  # Additional factor of extra points when refining extensions
 
     """
     Description of input data format:
@@ -2996,7 +3101,6 @@ def main() -> int:
         blade1Cyl = CartToCyl(blade1)
         blade2Cyl = CartToCyl(blade2)
         # Check that first and last blade profiles lie on or extend beyond hub/casing, adjust as needed
-        # JD: commented out for now since IGV doens't need this anyway -- crashes if uncommented
         blade1Cyl, blade2Cyl, nSections = trimProfilesToGasPath(blade1Cyl, blade2Cyl, hub, cas, res)
         # Now have the proper sections, proceed
         # Split blade curves at farthest-forward ("LE") and farthest-backward ("TE") points - split blade sides too
@@ -3007,8 +3111,6 @@ def main() -> int:
         # Get initial estimates of directions for upstream/downstream extensions for each section
         angleLE1, angleTE1 = getInitExtAngles(blade1LECyl, blade1TECyl, blade1pCyl, blade1nCyl)
         angleLE2, angleTE2 = getInitExtAngles(blade2LECyl, blade2TECyl, blade2pCyl, blade2nCyl)
-        # JD: note: seems to be an issue here -- the angles for the 2 blades vary by quite a lot!
-        # However, I still dn't think this is actually used for anything.
         
         # Find offset end vertices on each section, update blade sides to include midpoints
         blade1OffsetVerticesCyl, blade1pCyl, blade1nCyl = getOffsetVertices(blade1pCyl,
@@ -3053,92 +3155,61 @@ def main() -> int:
                                       blade1UpExtmpt, blade1DnExtmpt, blade2UpExtmpt, blade2DnExtmpt,
                                       angConstraintCurves, angConstraintOffsets, bladeRes, passageRes,
                                       percentVal, percentValNonCutLE, percentValNonCutTE)
-        # Convert everything back to cylindrical coordinates, including trimming extensions to desired geometry
+        # Convert everything back to cylindrical coordinates (theta, R, Z)
         crossPassageUpCyl = mptToCyl(crossPassageUpmpt,
-                                     blade1UpExtmpt,
-                                     blade2UpExtmpt,
-                                     blade1DnExtmpt,
-                                     blade2DnExtmpt,
-                                     blade1mpt,
-                                     blade2mpt)
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
         crossPassageDnCyl = mptToCyl(crossPassageDnmpt,
-                                     blade1UpExtmpt,
-                                     blade2UpExtmpt,
-                                     blade1DnExtmpt,
-                                     blade2DnExtmpt,
-                                     blade1mpt,
-                                     blade2mpt)
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
         blade1UpExtCyl = mptToCyl(blade1UpExtmpt,
-                                  blade1UpExtmpt,
-                                  blade2UpExtmpt,
-                                  blade1DnExtmpt,
-                                  blade2DnExtmpt,
-                                  blade1mpt,
-                                  blade2mpt)
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
         blade1DnExtCyl = mptToCyl(blade1DnExtmpt,
-                                  blade1UpExtmpt,
-                                  blade2UpExtmpt,
-                                  blade1DnExtmpt,
-                                  blade2DnExtmpt,
-                                  blade1mpt,
-                                  blade2mpt)
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
         blade2UpExtCyl = mptToCyl(blade2UpExtmpt,
-                                  blade1UpExtmpt,
-                                  blade2UpExtmpt,
-                                  blade1DnExtmpt,
-                                  blade2DnExtmpt,
-                                  blade1mpt,
-                                  blade2mpt)
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
         blade2DnExtCyl = mptToCyl(blade2DnExtmpt,
-                                  blade1UpExtmpt,
-                                  blade2UpExtmpt,
-                                  blade1DnExtmpt,
-                                  blade2DnExtmpt,
-                                  blade1mpt,
-                                  blade2mpt)
-        blade1toOffsetUpCyl = mptToCyl(blade1toOffsetUpmpt,
-                                       blade1UpExtmpt,
-                                       blade2UpExtmpt,
-                                       blade1DnExtmpt,
-                                       blade2DnExtmpt,
-                                       blade1mpt,
-                                       blade2mpt)
-        blade2toOffsetUpCyl = mptToCyl(blade2toOffsetUpmpt,
-                                       blade1UpExtmpt,
-                                       blade2UpExtmpt,
-                                       blade1DnExtmpt,
-                                       blade2DnExtmpt,
-                                       blade1mpt,
-                                       blade2mpt)
-        blade1toOffsetDnCyl = mptToCyl(blade1toOffsetDnmpt,
-                                       blade1UpExtmpt,
-                                       blade2UpExtmpt,
-                                       blade1DnExtmpt,
-                                       blade2DnExtmpt,
-                                       blade1mpt,
-                                       blade2mpt)
-        blade2toOffsetDnCyl = mptToCyl(blade2toOffsetDnmpt,
-                                       blade1UpExtmpt,
-                                       blade2UpExtmpt,
-                                       blade1DnExtmpt,
-                                       blade2DnExtmpt,
-                                       blade1mpt,
-                                       blade2mpt)
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
         offset1Cyl = mptToCyl(blade1offsetmpt,
-                              blade1UpExtmpt,
-                              blade2UpExtmpt,
-                              blade1DnExtmpt,
-                              blade2DnExtmpt,
-                              blade1mpt,
-                              blade2mpt)
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
         offset2Cyl = mptToCyl(blade2offsetmpt,
-                              blade1UpExtmpt,
-                              blade2UpExtmpt,
-                              blade1DnExtmpt,
-                              blade2DnExtmpt,
-                              blade1mpt,
-                              blade2mpt)
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
+        # The above curves have the following property: on the extensions,
+        # the point before the endpoint that is coincident to a blade LE/TE
+        # is the same as the offset ends. So, moving forward, we'd like to
+        # not only trim the extensions to the correct z coordinates at the
+        # inlet/outlet, but also cut them to stop at the offset ends, and
+        # define new curves for the offsets with some desired number of points.
+        # These curves are straight lines in cylindrical coordinates.
+
+        # Create blade-to-offset curves
+        bladeToOffsetRes = int(res*0.5)
+        blade1toOffsetUpCyl = bladeToOffset(pt1=blade1UpExtCyl[:, -2, :],
+                                            pt2=blade1UpExtCyl[:, -1, :],
+                                            res=bladeToOffsetRes)
+        blade2toOffsetUpCyl = bladeToOffset(pt1=blade2UpExtCyl[:, -2, :],
+                                            pt2=blade2UpExtCyl[:, -1, :],
+                                            res=bladeToOffsetRes)
+        blade1toOffsetDnCyl = bladeToOffset(pt1=blade1DnExtCyl[:, 0, :],
+                                            pt2=blade1DnExtCyl[:, 1, :],
+                                            res=bladeToOffsetRes)
+        blade2toOffsetDnCyl = bladeToOffset(pt1=blade2DnExtCyl[:, 0, :],
+                                            pt2=blade2DnExtCyl[:, 1, :],
+                                            res=bladeToOffsetRes)
+        # Trim extensions to desired geometry and increase streamwise resolution
+        blade1UpExtCyl = trimAndRefineExt(blade1UpExtCyl, res, mul, endZ=meridCurve[:, 0, 1], keep='hi', hub=hub, cas=cas)
+        blade1DnExtCyl = trimAndRefineExt(blade1DnExtCyl, res, mul, endZ=meridCurve[:, -1, 1], keep='lo', hub=hub, cas=cas)
+        blade2UpExtCyl = trimAndRefineExt(blade2UpExtCyl, res, mul, endZ=meridCurve[:, 0, 1], keep='hi', hub=hub, cas=cas)
+        blade2DnExtCyl = trimAndRefineExt(blade2DnExtCyl, res, mul, endZ=meridCurve[:, -1, 1], keep='lo', hub=hub, cas=cas)
+        
         # Split blade and offset curves to upstream and downstream halves
+        # JD: UP TO HERE
         blade1UpCyl, blade1DnCyl, blade2UpCyl, blade2DnCyl, offset1UpCyl, offset1DnCyl, offset2UpCyl, offset2DnCyl, midCurveMidCyl, midCurve1Cyl, midCurve2Cyl = splitBladesAndOffsets(blade1Cyl,
            blade2Cyl,
            blade1offsetCyl,
