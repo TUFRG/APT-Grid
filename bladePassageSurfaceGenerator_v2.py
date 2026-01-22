@@ -595,7 +595,7 @@ def getOffsetVertices(bladep, bladen, meridCurve, LE, TE, delta):
         midNOffset1Cyl = np.array(mf.cart2pol(midNOffset1[0], midNOffset1[1], midNOffset1[2])).T
         offsetVertex1Cyl[d,:] = np.vstack((leOffset1Cyl, midPOffset1Cyl, teOffset1Cyl, midNOffset1Cyl))
 
-    return offsetVertex1Cyl, newBlade1PCylM, newBlade1NCylM
+    return offsetVertex1Cyl, newBlade1PCylM, newBlade1NCylM, mid1P, mid1N
 
 
 def cylToMPT(blade1p, blade1n, blade2p, blade2n, offsetVertex1Cyl, offsetVertex2Cyl, LE1, TE1, LE2, TE2, meridCurve, bladeRes, res):
@@ -850,7 +850,7 @@ def defineExt(blade1pmpt, blade1nmpt, blade2pmpt, blade2nmpt, offset1mpt, offset
     downstreamExtnCamber1Adj = np.zeros([newNsection,nl+1,2]) #Temporary storage 
     downstreamExtnCamber2Adj = np.zeros([newNsection,nl+1,2]) #Temporary storage 
     
-    # Loop to get the m'-theta coordinates of the offset midcohrd points
+    # Loop to get the m'-theta coordinates of the offset midchord points
     midchordP1 = np.zeros([newNsection,2])
     midchordN1 = np.zeros([newNsection,2])
     midchordP2 = np.zeros([newNsection,2])
@@ -1476,6 +1476,85 @@ def trimAndRefineExt(extCyl, res, mul, endZ, keep, hub, cas):
 
     return trimmedExtCyl
 
+
+def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVertices1Cyl, offsetVertices2Cyl, mid1, mid2, res, passageRes):
+    """
+    Split blade and offset curves at mid-chord to upstream and downstream parts
+    Returns split blades, offsets, as well as the 3 mid-chord curve sections
+    """
+    newNsection = blade1Cyl.shape[0]
+    bladeRes = blade1Cyl.shape[1]
+    
+    blade1UpCyl = np.zeros((newNsection, bladeRes, 3))  # This is the upstream portion of blade surface
+    offset1UpCyl = np.zeros((newNsection, bladeRes, 3))  # This is the upstream portion of offset surface
+    blade1DnCyl = np.zeros((newNsection, bladeRes, 3))  # This is the downstream portion of blade surface
+    offset1DnCyl = np.zeros((newNsection, bladeRes, 3))  # This is the downstream portion of offset surface
+    
+    blade2UpCyl = np.zeros((newNsection, bladeRes, 3))  # This is the upstream portion of blade surface
+    offset2UpCyl = np.zeros((newNsection, bladeRes, 3))  # This is the upstream portion of offset surface
+    blade2DnCyl = np.zeros((newNsection, bladeRes, 3))  # This is the downstream portion of blade surface
+    offset2DnCyl = np.zeros((newNsection, bladeRes, 3))  # This is the downstream portion of offset surface
+    
+    midCurveMidCyl =  np.zeros([newNsection,passageRes,3])  # midCurve in between offsets
+    midCurve1Cyl =  np.zeros([newNsection,int(res*0.5),3])  # midCurve between low theta blade and offset
+    midCurve2Cyl =  np.zeros([newNsection,int(res*0.5),3])  # midCurve between offset and high theta blade
+    
+    for v in range(newNsection):
+        blade1Idx = np.argmin(np.abs(blade1Cyl[v][:, 2] - mid1[v][2]))
+        highThetaB1 = blade1Cyl[v][0:blade1Idx+1]
+        blade1UpCyl[v] = densifyCurve(highThetaB1, bladeRes, 'LE')
+        highThetaB2 = blade1Cyl[v][blade1Idx:]
+        blade1DnCyl[v] = densifyCurve(highThetaB2, bladeRes, 'TE')
+
+        blade2Idx = np.argmin(np.abs(blade2Cyl[v][:, 2] - mid2[v][2]))
+        lowThetaB1 = blade2Cyl[v][0:blade2Idx+1]
+        blade2UpCyl[v] = densifyCurve(lowThetaB1, bladeRes, 'LE')
+        lowThetaB2 = blade2Cyl[v][blade2Idx:]
+        blade2DnCyl[v] = densifyCurve(lowThetaB2, bladeRes, 'TE')
+
+        offset1CylM = insertPoint(offset1Cyl[v], offsetVertices1Cyl[v][1])
+        offset1Idx = np.argmin(np.abs(offset1CylM[:, 2] - offsetVertices1Cyl[v][1][2]))
+        highThetaO1 = offset1CylM[0:offset1Idx+1]
+        offset1UpCyl[v] = densifyCurve(highThetaO1, bladeRes, 'LE')
+        highThetaO2 = offset1CylM[offset1Idx:]
+        offset1UpCyl[v] = densifyCurve(highThetaO2, bladeRes, 'TE')
+
+        offset2CylM = insertPoint(offset2Cyl[v], offsetVertices2Cyl[v][3])
+        offset2Idx = np.argmin(np.abs(offset2CylM[:, 2] - offsetVertices2Cyl[v][3][2]))
+        lowThetaO1 = offset2CylM[0:offset2Idx+1]
+        offset2UpCyl[v] = densifyCurve(lowThetaO1, bladeRes, 'LE')
+        lowThetaO2 = offset2CylM[offset2Idx:]
+        offset2DnCyl[v] = densifyCurve(lowThetaO2, bladeRes, 'TE')
+
+        # "midCurve" --> just the set of four points blade-offset-offset-blade on this section
+        # (to clarify: these are in order of increasing theta)
+        midCurve = np.vstack((highThetaB2[0], highThetaO2[0], lowThetaO2[0], lowThetaB2[0]))
+        # these arrays hold the surface points for the 3 sections of the midChord surface:
+        midCurveMidCyl[v][:,2] = np.linspace(midCurve[0,2], midCurve[-1,2], passageRes)
+        midCurve1Cyl[v][:,2] = np.linspace(midCurve[0,2], midCurve[-1,2], int(res*0.5))
+        midCurve2Cyl[v][:,2] = np.linspace(midCurve[0,2], midCurve[-1,2], int(res*0.5))
+        midCurveMidCyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[-1,1], passageRes)
+        midCurve1Cyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[-1,1], int(res*0.5))
+        midCurve2Cyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[-1,1],int(res*0.5))
+        midCurve2Cyl[v][:,0]= np.linspace(midCurve[:,0][0], midCurve[:,0][1], int(0.5*res))
+        midCurveMidCyl[v][:,0] = np.linspace(midCurve[:,0][1], midCurve[:,0][2], passageRes)
+        midCurve1Cyl[v][:,0] = np.linspace(midCurve[:,0][2], midCurve[:,0][3], int(0.5*res))
+
+    return blade1UpCyl, blade1DnCyl, blade2UpCyl, blade2DnCyl, offset1UpCyl, offset1DnCyl, offset2UpCyl, offset2DnCyl, midCurveMidCyl, midCurve1Cyl, midCurve2Cyl
+
+
+def cylToCart(arrCyl):
+    """
+    converts input array in cylindrical coordinates (last dimension)
+    to Cartesian. Assumes (theta, r, z) for cylindrical data.
+    """
+    th = arrCyl[:, :, 0]
+    r = arrCyl[:, :, 1]
+    z = arrCyl[:, :, 2]
+    x = r * np.cos(th)
+    y = r * np.sin(th)
+    return np.stack((x, y, z), axis=2)
+    
 
 def cutArcLenMaps(arr, lower_bound=0.0, upper_bound=1.0):
     firstRow = arr[0:1]
@@ -3113,13 +3192,13 @@ def main() -> int:
         angleLE2, angleTE2 = getInitExtAngles(blade2LECyl, blade2TECyl, blade2pCyl, blade2nCyl)
         
         # Find offset end vertices on each section, update blade sides to include midpoints
-        blade1OffsetVerticesCyl, blade1pCyl, blade1nCyl = getOffsetVertices(blade1pCyl,
+        blade1OffsetVerticesCyl, blade1pCyl, blade1nCyl, mid1P, mid1N = getOffsetVertices(blade1pCyl,
                                                           blade1nCyl,
                                                           meridCurve,
                                                           blade1LECyl,
                                                           blade1TECyl,
                                                           delBla)
-        blade2OffsetVerticesCyl, blade2pCyl, blade2nCyl = getOffsetVertices(blade2pCyl,
+        blade2OffsetVerticesCyl, blade2pCyl, blade2nCyl, mid2P, mid2N = getOffsetVertices(blade2pCyl,
                                                           blade2nCyl,
                                                           meridCurve,
                                                           blade2LECyl,
@@ -3209,14 +3288,18 @@ def main() -> int:
         blade2DnExtCyl = trimAndRefineExt(blade2DnExtCyl, res, mul, endZ=meridCurve[:, -1, 1], keep='lo', hub=hub, cas=cas)
         
         # Split blade and offset curves to upstream and downstream halves
-        # JD: UP TO HERE
-        blade1UpCyl, blade1DnCyl, blade2UpCyl, blade2DnCyl, offset1UpCyl, offset1DnCyl, offset2UpCyl, offset2DnCyl, midCurveMidCyl, midCurve1Cyl, midCurve2Cyl = splitBladesAndOffsets(blade1Cyl,
-           blade2Cyl,
-           blade1offsetCyl,
-           blade2offsetCyl,
-           blade1OffsetVerticesCyl,
-           blade2OffsetVerticesCyl)
+        blade1UpCyl, blade1DnCyl, blade2UpCyl, blade2DnCyl, offset1UpCyl, offset1DnCyl, offset2UpCyl, offset2DnCyl, midCurveMidCyl, midCurve1Cyl, midCurve2Cyl = splitBladesAndOffsets(blade1PMprime[:, :, 0:3],
+                                                                 blade2NMprime[:, :, 0:3],
+                                                                 offset1Cyl,
+                                                                 offset2Cyl,
+                                                                 blade1OffsetVerticesCyl,
+                                                                 blade2OffsetVerticesCyl,
+                                                                 mid1P,
+                                                                 mid2N,
+                                                                 res,
+                                                                 passageRes)
         # Define interior nodes for inlet, outlet, hub, casing
+        # JD: UP TO HERE -- equiv. line 2422 in scriptRev14divided.py
         inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl)
         blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
                                                                  midCurve1Cyl,
