@@ -138,3 +138,80 @@ def gridPlot(nodes, m, n):
     plt2.clf()
 
     return 0
+
+
+# attempt to generalize to 3D data (by Jeff Defoe)
+def transfinite3D(lower, upper, left, right):
+    """Make a transfinite interpolation.
+
+    http://en.wikipedia.org/wiki/Transfinite_interpolation
+
+    Args:
+        lower (list): List of (x, y, z) tuples describing the lower bound
+        upper (list): List of (x, y, z) tuples describing the upper bound
+        left (list): List of (x, y, z) tuples describing the left bound
+        right (list): List of (x, y, z) tuples describing the right bound
+
+    """
+
+    import numpy as np
+    import scipy.interpolate as si
+
+    lower = np.array(lower)
+    upper = np.array(upper)
+    left = np.array(left)
+    right = np.array(right)
+
+    # interpolate B-spline through data points
+    # here, a linear interpolant is derived "k=1"
+    # splprep returns:
+    # tck ... tuple (t,c,k) containing the vector of knots,
+    #         the B-spline coefficients, and the degree of the spline.
+    #   u ... array of the parameters for each given point (knot)
+    tck_left, u_left = si.splprep(left.T, s=0, k=1)
+    tck_right, u_right = si.splprep(right.T, s=0, k=1)
+    tck_lower, u_lower = si.splprep(lower.T, s=0, k=1)
+    tck_upper, u_upper = si.splprep(upper.T, s=0, k=1)
+
+    # evaluate function at any parameter "0<=t<=1"
+    def eta_left(t):
+        return np.array(si.splev(t, tck_left, der=0))
+
+    def eta_right(t):
+        return np.array(si.splev(t, tck_right, der=0))
+
+    def xi_bottom(t):
+        return np.array(si.splev(t, tck_lower, der=0))
+
+    def xi_top(t):
+        return np.array(si.splev(t, tck_upper, der=0))
+
+    nodes = np.zeros((len(u_left) * len(u_lower), 3))
+
+    # corner points
+    c1 = xi_bottom(0.0)
+    c2 = xi_top(0.0)
+    c3 = xi_bottom(1.0)
+    c4 = xi_top(1.0)
+
+    for i, xi in enumerate(u_lower):
+        xi_t = u_upper[i]
+        for j, eta in enumerate(u_left):
+            eta_r = u_right[j]
+
+            node = i * len(u_left) + j
+
+            # formula for the transinite interpolation
+            point = (1.0 - xi) * eta_left(eta) + xi * eta_right(eta_r) + \
+                (1.0 - eta) * xi_bottom(xi) + eta * xi_top(xi_t) - \
+                ((1.0 - xi) * (1.0 - eta) * c1 + (1.0 - xi) * eta * c2 +
+                 xi * (1.0 - eta) * c3 + xi * eta * c4)
+
+            nodes[node, 0] = point[0]
+            nodes[node, 1] = point[1]
+            nodes[node, 2] = point[2]
+
+    return nodes
+
+
+#nodes = transfinite(lower, upper, left, right)

@@ -1517,7 +1517,7 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
         highThetaO1 = offset1CylM[0:offset1Idx+1]
         offset1UpCyl[v] = densifyCurve(highThetaO1, bladeRes, 'LE')
         highThetaO2 = offset1CylM[offset1Idx:]
-        offset1UpCyl[v] = densifyCurve(highThetaO2, bladeRes, 'TE')
+        offset1DnCyl[v] = densifyCurve(highThetaO2, bladeRes, 'TE')
 
         offset2CylM = insertPoint(offset2Cyl[v], offsetVertices2Cyl[v][3])
         offset2Idx = np.argmin(np.abs(offset2CylM[:, 2] - offsetVertices2Cyl[v][3][2]))
@@ -1541,6 +1541,102 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
         midCurve1Cyl[v][:,0] = np.linspace(midCurve[:,0][2], midCurve[:,0][3], int(0.5*res))
 
     return blade1UpCyl, blade1DnCyl, blade2UpCyl, blade2DnCyl, offset1UpCyl, offset1DnCyl, offset2UpCyl, offset2DnCyl, midCurveMidCyl, midCurve1Cyl, midCurve2Cyl
+
+
+def fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, passageRes):
+    """
+    Uses offset and extension data to create arrays with interior nodes for
+    the inlet, outlet, and central sections of the hub and casing
+    """
+    # Using transfinite interpolation (3D version)
+    # tf.transfinite3D(lower, upper, left, right)
+
+    # Inlet is bounded by:
+    # blade1UpExtCyl[:, 0, :]
+    # blade2UpExtCyl[:, 0, :]
+    # and constant-radius curves connecting
+    # (hub): blade1UpExtCyl[0, 0, :] and blade2UpExtCyl[0, 0, :]
+    # (cas): blade1UpExtCyl[-1, 0, :] and blade2UpExtCyl[-1, 0, :]
+    # TF interpolation should be done in cylindrical coordinates
+    inletHubThetas = np.linspace(blade1UpExtCyl[0, 0, 0], blade2UpExtCyl[0, 0, 0], passageRes)
+    inletHubPtsCyl = np.zeros((passageRes, 3))
+    inletHubPtsCyl[:, 1:3] = blade1UpExtCyl[0, 0, 1:3]
+    inletHubPtsCyl[:, 0] = inletHubThetas
+    
+    inletCasThetas = np.linspace(blade1UpExtCyl[-1, 0, 0], blade2UpExtCyl[-1, 0, 0], passageRes)
+    inletCasPtsCyl = np.zeros((passageRes, 3))
+    inletCasPtsCyl[:, 1:3] = blade1UpExtCyl[-1, 0, 1:3]
+    inletCasPtsCyl[:, 0] = inletCasThetas
+
+    inletPtsCylNodes = tf.transfinite3D(inletHubPtsCyl, inletCasPtsCyl, blade1UpExtCyl[:, 0, :], blade2UpExtCyl[:, 0, :])
+    inletPtsCyl = inletPtsCylNodes.reshape(passageRes, int(inletPtsCylNodes.shape[0]/passageRes), 3)
+    inletPtsCyl = np.swapaxes(inletPtsCyl, 0, 1)
+
+    # Outlet is bounded by:
+    # blade1DnExtCyl[:, -1, :]
+    # blade2DnExtCyl[:, -1, :]
+    # and constant-radius curves connecting
+    # (hub): blade1DnExtCyl[0, -1, :] and blade2DnExtCyl[0, -1, :]
+    # (cas): blade1DnExtCyl[-1, -1, :] and blade2DnExtCyl[-1, -1, :]
+    # TF interpolation should be done in cylindrical coordinates
+    outletHubThetas = np.linspace(blade1DnExtCyl[0, -1, 0], blade2DnExtCyl[0, -1, 0], passageRes)
+    outletHubPtsCyl = np.zeros((passageRes, 3))
+    outletHubPtsCyl[:, 1:3] = blade1DnExtCyl[0, -1, 1:3]
+    outletHubPtsCyl[:, 0] = outletHubThetas
+    
+    outletCasThetas = np.linspace(blade1DnExtCyl[-1, -1, 0], blade2DnExtCyl[-1, -1, 0], passageRes)
+    outletCasPtsCyl = np.zeros((passageRes, 3))
+    outletCasPtsCyl[:, 1:3] = blade1DnExtCyl[-1, -1, 1:3]
+    outletCasPtsCyl[:, 0] = outletCasThetas
+
+    outletPtsCylNodes = tf.transfinite3D(outletHubPtsCyl, outletCasPtsCyl, blade1DnExtCyl[:, -1, :], blade2DnExtCyl[:, -1, :])
+    outletPtsCyl = outletPtsCylNodes.reshape(passageRes, int(outletPtsCylNodes.shape[0]/passageRes), 3)
+    outletPtsCyl = np.swapaxes(outletPtsCyl, 0, 1)
+
+    # Central hub is bounded by:
+    # inletHubPtsCyl
+    # outletHubPtsCyl
+    # blade1UpExtCyl[0, :, :], offset1UpCyl[0, 1:, :], offset1DnCyl[0, 1:, :], blade1DnExtCyl[0, 1:, :]
+    # blade2UpExtCyl[0, :, :], offset2UpCyl[0, 1:, :], offset2DnCyl[0, 1:, :], blade2DnExtCyl[0, 1:, :]
+    hub1 = np.concatenate((blade1UpExtCyl[0, :, :], offset1UpCyl[0, 1:, :], offset1DnCyl[0, 1:, :], blade1DnExtCyl[0, 1:, :]), axis=0)
+    hub2 = np.concatenate((blade2UpExtCyl[0, :, :], offset2UpCyl[0, 1:, :], offset2DnCyl[0, 1:, :], blade2DnExtCyl[0, 1:, :]), axis=0)
+    hubPtsCylNodes = tf.transfinite3D(inletHubPtsCyl, outletHubPtsCyl, hub1, hub2)
+    hubPtsCyl = hubPtsCylNodes.reshape(passageRes, int(hubPtsCylNodes.shape[0]/passageRes), 3)
+    hubPtsCyl = np.swapaxes(hubPtsCyl, 0, 1)
+
+    # Central cas is bounded by:
+    # inletCasbPtsCyl
+    # outletCasPtsCyl
+    # blade1UpExtCyl[-1, :, :], offset1UpCyl[-1, 1:, :], offset1DnCyl[-1, 1:, :], blade1DnExtCyl[-1, 1:, :]
+    # blade2UpExtCyl[-1, :, :], offset2UpCyl[-1, 1:, :], offset2DnCyl[-1, 1:, :], blade2DnExtCyl[-1, 1:, :]
+    cas1 = np.concatenate((blade1UpExtCyl[-1, :, :], offset1UpCyl[-1, 1:, :], offset1DnCyl[-1, 1:, :], blade1DnExtCyl[-1, 1:, :]), axis=0)
+    cas2 = np.concatenate((blade2UpExtCyl[-1, :, :], offset2UpCyl[-1, 1:, :], offset2DnCyl[-1, 1:, :], blade2DnExtCyl[-1, 1:, :]), axis=0)
+    casPtsCylNodes = tf.transfinite3D(inletCasPtsCyl, outletCasPtsCyl, cas1, cas2)
+    casPtsCyl = casPtsCylNodes.reshape(passageRes, int(casPtsCylNodes.shape[0]/passageRes), 3)
+    casPtsCyl = np.swapaxes(casPtsCyl, 0, 1)
+
+    return inletPtsCyl, outletPtsCyl, hubPtsCyl, casPtsCyl
+
+
+"""
+        blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
+                                                                 midCurve1Cyl,
+                                                                 offset1UpCyl,
+                                                                 blade1UpCyl)
+        blade1DnHubPtsCyl, blade1DnCasPtsCyl = fillBladeToOffset(midCurve1Cyl,
+                                                                 blade1toOffsetDnCyl,
+                                                                 offset1DnCyl,
+                                                                 blade1DnCyl)
+        blade2UpHubPtsCyl, blade2UpCasPtsCyl = fillBladeToOffset(blade2toOffsetUpCyl,
+                                                                 midCurve2Cyl,
+                                                                 blade2UpCyl,
+                                                                 offset2UpCyl)
+        blade2DnHubPtsCyl, blade2DnCasPtsCyl = fillBladeToOffset(midCurve2Cyl,
+                                                                 blade2toOffsetDnCyl,
+                                                                 offset2DnCyl,
+                                                                 blade2DnpCyl)
+"""
+# JD: add "fillBladetoOffset" function here
 
 
 def cylToCart(arrCyl):
@@ -3299,8 +3395,8 @@ def main() -> int:
                                                                  res,
                                                                  passageRes)
         # Define interior nodes for inlet, outlet, hub, casing
-        # JD: UP TO HERE -- equiv. line 2422 in scriptRev14divided.py
-        inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl)
+        inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, passageRes)
+        # JD: UP TO HERE (still equiv. to 2422-2646 of scriptRev14divided.py)
         blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
                                                                  midCurve1Cyl,
                                                                  offset1UpCyl,
