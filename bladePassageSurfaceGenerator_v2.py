@@ -1618,25 +1618,49 @@ def fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtC
     return inletPtsCyl, outletPtsCyl, hubPtsCyl, casPtsCyl
 
 
-"""
-        blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
-                                                                 midCurve1Cyl,
-                                                                 offset1UpCyl,
-                                                                 blade1UpCyl)
-        blade1DnHubPtsCyl, blade1DnCasPtsCyl = fillBladeToOffset(midCurve1Cyl,
-                                                                 blade1toOffsetDnCyl,
-                                                                 offset1DnCyl,
-                                                                 blade1DnCyl)
-        blade2UpHubPtsCyl, blade2UpCasPtsCyl = fillBladeToOffset(blade2toOffsetUpCyl,
-                                                                 midCurve2Cyl,
-                                                                 blade2UpCyl,
-                                                                 offset2UpCyl)
-        blade2DnHubPtsCyl, blade2DnCasPtsCyl = fillBladeToOffset(midCurve2Cyl,
-                                                                 blade2toOffsetDnCyl,
-                                                                 offset2DnCyl,
-                                                                 blade2DnpCyl)
-"""
-# JD: add "fillBladetoOffset" function here
+def fillBladeToOffset(crossPassageUpCyl, crossPassageDnCyl, lowThetaCyl, highThetaCyl):
+    """
+    Creates interior nodes for surfaces between blades and offsets on
+    hub and casing. Takes 4 arguments, the bounding surfaces.
+    Outputs 2 arrays of hub and casing interior nodes.
+    """
+    # Using transfinite interpolation (3D version)
+    # tf.transfinite3D(lower, upper, left, right)
+    crossPassagePts = crossPassageUpCyl.shape[1]
+    alongPassagePts = lowThetaCyl.shape[1]
+    # hub[i=0] and cas[i=-1] bounded by:
+    # crossPassageUpCyl[i, :, :]
+    # crossPassageDnCyl[i, :, :]
+    # lowThetaCyl[i, :, :]
+    # highThetaCyl[i, :, :]
+
+    hubPtsCylNodes = tf.transfinite3D(crossPassageUpCyl[0, :, :], crossPassageDnCyl[0, :, :], lowThetaCyl[0, :, :], highThetaCyl[0, :, :])
+    hubPtsCyl = hubPtsCylNodes.reshape(crossPassagePts, alongPassagePts, 3)
+    hubPtsCyl = np.swapaxes(hubPtsCyl, 0, 1)
+
+    casPtsCylNodes = tf.transfinite3D(crossPassageUpCyl[-1, :, :], crossPassageDnCyl[-1, :, :], lowThetaCyl[-1, :, :], highThetaCyl[-1, :, :])
+    casPtsCyl = casPtsCylNodes.reshape(crossPassagePts, alongPassagePts, 3)
+    casPtsCyl = np.swapaxes(casPtsCyl, 0, 1)
+
+    return hubPtsCyl, casPtsCyl
+
+
+def combineArrays(*args):
+    """
+    Combine all Cartesian surface arrays into X/Y/Zvalues
+    which the STL generator function expects
+    """
+    arrList = list(args)
+    arrNum = len(arrList)
+    Xvalues = []
+    Yvalues = []
+    Zvalues = []
+    for i in range(arrNum):
+        Xvalues.append(arrList[i][:, :, 0])
+        Yvalues.append(arrList[i][:, :, 1])
+        Zvalues.append(arrList[i][:, :, 2])
+
+    return Xvalues, Yvalues, Zvalues
 
 
 def cylToCart(arrCyl):
@@ -2532,15 +2556,20 @@ def curveFrac(bladePt, offsetCurve, projectOffset, percent):
 
 
 #%% Defining the STLs
-def createSTLs(Xvalues, Yvalues, Zvalues, filePath):
+def createSTLs(Xvalues, Yvalues, Zvalues, filePath, passageNum):
     """ Create and write an STL file based on input Cartesian coordinates """
     filenames = ['blade1LowTheta','offset1LowTheta','blade1HighTheta','offset1HighTheta','blade2LowTheta','offset2LowTheta','blade2HighTheta','offset2HighTheta'
                  ,'LE','TE','midChord', 'hub', 'casing', 'inlet', 'outlet', 'inletLow', 'inletHigh', 'outletLow', 'outletHigh', 'highUpHub', 'highDwHub',
                  'lowUpHub', 'lowDwHub', 'highUpCas', 'highDwCas', 'lowUpCas', 'lowDwCas', 'highOBUp', 'lowOBUp', 'highOBDw', 'lowOBDw', 'midChordLow', 'midChordHigh']
 
+    pNs = str(passageNum)
+
+    dirPath = os.path.join(filePath, 'passage'+pNs)
+    os.makedirs(dirPath, exist_ok=True)
+
     # Note: this creates STLs in Cartesian coordinates -- good for visual checks
     for qq in range(len(Xvalues)):
-        filename = filePath + '/../geometry1/{}.stl'.format(filenames[qq])
+        filename = filePath + 'passage' + pNs + '/' + str(filenames[qq]) + '.stl'
         rows = Zvalues[qq].shape[0]  ## Use Z because it is the axis of rotation
         columns = Zvalues[qq].shape[1]
         X = Xvalues[qq]
@@ -2581,7 +2610,7 @@ def createSTLs(Xvalues, Yvalues, Zvalues, filePath):
 
 
 #%% Write out input file 
-def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, additionalTangentialRefine, additionalAxialRefine, highHub1, lowHub1, highCas1, lowCas1, highHub2, lowHub2, highCas2, lowCas2):
+def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, passageNum, additionalTangentialRefine, additionalAxialRefine, highHub1, lowHub1, highCas1, lowCas1, highHub2, lowHub2, highCas2, lowCas2):
     """ compute and write all passage-specific parameters to file
     to be parsed by a Bash script to modify dictionaries prior to
     generating the mesh using blockMesh (OpenFOAM tool)"""
@@ -2932,7 +2961,9 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
 
     # Produce output file
     # set file name
-    scriptFile = os.path.join(dataPath, 'passageParameters')
+    dirPath = os.path.join(dataPath, 'passage'+str(passageNum))
+    os.makedirs(dirPath, exist_ok=True)
+    scriptFile = os.path.join(dataPath, 'passage'+str(passageNum), 'passageParameters')
     # open file
     paramFile = open(scriptFile, 'w')
     # write scale parameter
@@ -3130,6 +3161,7 @@ def main() -> int:
     hubFileName = 'sHub.curve'
     casFileName = 'sCas.curve'
     bladeCurveFile = 'statorBlade1_original.curve'
+    outputPath = '../outputData/'
     Nb = 31  # number of blades in row
     periodic = 1  # mode selection
     
@@ -3396,7 +3428,6 @@ def main() -> int:
                                                                  passageRes)
         # Define interior nodes for inlet, outlet, hub, casing
         inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, passageRes)
-        # JD: UP TO HERE (still equiv. to 2422-2646 of scriptRev14divided.py)
         blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
                                                                  midCurve1Cyl,
                                                                  offset1UpCyl,
@@ -3412,7 +3443,7 @@ def main() -> int:
         blade2DnHubPtsCyl, blade2DnCasPtsCyl = fillBladeToOffset(midCurve2Cyl,
                                                                  blade2toOffsetDnCyl,
                                                                  offset2DnCyl,
-                                                                 blade2DnpCyl)
+                                                                 blade2DnCyl)
         # Convert everything back to Cartesian coordinates
         blade1UpCart = cylToCart(blade1UpCyl)
         offset1UpCart = cylToCart(offset1UpCyl)
@@ -3448,7 +3479,7 @@ def main() -> int:
         blade2UpCasCart = cylToCart(blade2UpCasPtsCyl)
         blade2DnCasCart = cylToCart(blade2DnCasPtsCyl)
         # Fill final X, Y, Z arrays
-        Xvalues, Yvalues, Zvalues = combineArrays(blade1UpCart, 
+        Xvalues, Yvalues, Zvalues = combineArrays(blade1UpCart,
                                                   offset1UpCart,
                                                   blade2UpCart,
                                                   offset2UpCart,
@@ -3467,26 +3498,26 @@ def main() -> int:
                                                   blade2UpExtCart,
                                                   blade1DnExtCart,
                                                   blade2DnExtCart,
-                                                  blade1UpHubCart,
-                                                  blade1DnHubCart,
                                                   blade2UpHubCart,
                                                   blade2DnHubCart,
-                                                  blade1UpCasCart,
-                                                  blade1DnCasCart,
+                                                  blade1UpHubCart,
+                                                  blade1DnHubCart,
                                                   blade2UpCasCart,
                                                   blade2DnCasCart,
-                                                  blade1toOffsetUpCart,
+                                                  blade1UpCasCart,
+                                                  blade1DnCasCart,
                                                   blade2toOffsetUpCart,
-                                                  blade1toOffsetDnCart,
+                                                  blade1toOffsetUpCart,
                                                   blade2toOffsetDnCart,
+                                                  blade1toOffsetDnCart,
                                                   midCurve1Cart,
                                                   midCurve2Cart)
         # Define/write STLs
         print('Writing STL files for passage {}'.format(a))
-        createSTLs(Xvalues, Yvalues, Zvalues, filePath)
+        createSTLs(Xvalues, Yvalues, Zvalues, outputPath, a)
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
-        calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, additionalTangentialRefine, additionalAxialRefine)
+        calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap)
 
     return 0
 
