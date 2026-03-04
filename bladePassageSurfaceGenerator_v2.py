@@ -536,29 +536,30 @@ def getInitExtAngles(LE, TE, bladep, bladen):
     # downstream extensions
     # inputs: LE points, TE points, blade side profiles (p and n)
     # outputs: LE angles (directions), TE angles (directions)
+    # Key note: operates in m'-theta!
 
     nsec = LE.shape[0]
     angleLE = np.zeros(nsec)
     angleTE = np.zeros(nsec)
 
     for i in range(nsec):
-        chordlengthBlade = mf.dist2D(LE[i][2], LE[i][1]*LE[i][0], TE[i][2], TE[i][1]*TE[i][0])
+        chordlengthBlade = mf.dist2D(LE[i][0], LE[i][1], TE[i][0], TE[i][1])
         # Add 5% of chord length to the axial distance of the LE and TE to get vertical line that intersect blade surface
-        Pfunc = interp1d(bladep[:,i,2], bladep[:,i,1]*bladep[:,i,0])  # Interpolation function pos side
-        Nfunc = interp1d(bladen[:,i,2], bladen[:,i,1]*bladen[:,i,0])  # Interpolation function neg side
+        Pfunc = interp1d(bladep[i, :, 0], bladep[i, :, 1])  # Interpolation function pos side
+        Nfunc = interp1d(bladen[i, :, 0], bladen[i, :, 1])  # Interpolation function neg side
         # Determine the slope at the LE and TE of blade
-        zLE = LE[i][2] + 0.05*chordlengthBlade
+        zLE = LE[i][0] + 0.05*chordlengthBlade
         rThLEP = Pfunc(zLE)
         rThLEN = Nfunc(zLE)
         rThLE = 0.5*(rThLEP+rThLEN)
 
-        zTE = TE[i][2] - 0.05*chordlengthBlade
+        zTE = TE[i][0] - 0.05*chordlengthBlade
         rThTEP = Pfunc(zTE)
         rThTEN = Nfunc(zTE)
         rThTE = 0.5*(rThTEP + rThTEN)
 
-        slopeLE = mf.Slope(LE[i][2], LE[i][1]*LE[i][0], zLE, rThLE)
-        slopeTE = mf.Slope(TE[i][2], TE[i][1]*TE[i][0], zTE, rThTE)
+        slopeLE = mf.Slope(LE[i][0], LE[i][1], zLE, rThLE)
+        slopeTE = mf.Slope(TE[i][0], TE[i][1], zTE, rThTE)
         angleLE[i] = np.arctan(slopeLE)
         angleTE[i] = np.arctan(slopeTE)
 
@@ -844,7 +845,8 @@ def cylToMPT(blade1p, blade1n, blade2p, blade2n, offsetVertex1Cyl, offsetVertex2
             blade1P2D, blade1N2D, blade2P2D, blade2N2D, upstream2D,
             dwstream2D, offsetBlade12D, offsetBlade22D,
             allLEBlade12D, allLEBlade22D, allTEBlade12D, allTEBlade22D)
- 
+
+
 def defineExt(blade1pmpt, blade1nmpt, blade2pmpt, blade2nmpt, offset1mpt, offset2mpt, LE1mpt, LE2mpt, TE1mpt, TE2mpt, upstreamMprime, downstreamMprime, offsetUpstreamMprime, offsetDownstreamMprime, angleLE1, angleTE1, angleLE2, angleTE2, res):
     # Define "optimal" upstream/downstream extensions for both sides of the passage
     # inputs: blade sides in mpt, offset vertices in mpt, LEs/TEs, upstream/downstreams, angles, resolution
@@ -913,8 +915,8 @@ def defineExt(blade1pmpt, blade1nmpt, blade2pmpt, blade2nmpt, offset1mpt, offset
 
     # Loop to initialize the upstream/downstream extension directions
     for m in range(newNsection):
-        lePtBlade1 = LE1mpt[m] #LE of the high blade (low)
-        lePtBlade2 = LE2mpt[m] #LE of the low blade (high)
+        lePtBlade1 = LE1mpt[m]  # LE of the high blade (low)
+        lePtBlade2 = LE2mpt[m]  # LE of the low blade (high)
     
         midPt1 = angle_bisector_line(midchordN1[m],lePtBlade1, midchordP1[m]) #Compute the angle between SS,LE,PS
         leLine1Slope = compute_bisector_slope(midchordN1[m],lePtBlade1, midchordP1[m]) #determine the slope of the bisector
@@ -972,7 +974,7 @@ def defineExt(blade1pmpt, blade1nmpt, blade2pmpt, blade2nmpt, offset1mpt, offset
         downstreamCamber1[m] = downstream1
         downstreamExtnCamber1[m] = np.vstack(( dwLine1TE[0], tePtCam1, tePtBlade1))
         downstreamExtnCamber1Adj[m] = downstreamExtnCamber1[m]
-        
+
         angle2DeviationTE = np.deg2rad(mf.find_angle(dwLine2TE[0], tePtCam2, tePtCam1)) #This determines the angle between the tangent and line connecting LE pts on blade 1 and 2
         downstream2 = np.linspace(dwLine2TE[-1], dwLine2TE[0], res-1)
         downstream2 = insertPoint(downstream2,dwLine2TE[1])
@@ -993,27 +995,27 @@ def defineExt(blade1pmpt, blade1nmpt, blade2pmpt, blade2nmpt, offset1mpt, offset
         alphaLE1[n] = np.deg2rad(mf.find_angle(upstreamExtnCamber1[n,0], upstreamExtnCamber1[n,-1], np.array([upstreamExtnCamber1[n,-1,0]-res, upstreamExtnCamber1[n,-1,1]])))
         deltaMprimeLE2[n] = upstreamExtnCamber2[n,0,0] - upstreamExtnCamber2[n,-1,0]
         alphaLE2[n] = np.deg2rad(mf.find_angle(upstreamExtnCamber2[n,0], upstreamExtnCamber2[n,-1], np.array([upstreamExtnCamber2[n,-1,0]-res, upstreamExtnCamber2[n,-1,1]])))
-        
+
         deltaMprimeTE1[n] = downstreamExtnCamber1[n,0,0] - downstreamExtnCamber1[n,-1,0]
         alphaTE1[n] = np.deg2rad(mf.find_angle(downstreamExtnCamber1[n,0], downstreamExtnCamber1[n,-1], np.array([downstreamExtnCamber1[n,-1,0]+res, downstreamExtnCamber1[n,-1,1]])))
         deltaMprimeTE2[n] = downstreamExtnCamber2[n,0,0] - downstreamExtnCamber2[n,-1,0]
         alphaTE2[n] = np.deg2rad(mf.find_angle(downstreamExtnCamber2[n,0], downstreamExtnCamber2[n,-1], np.array([downstreamExtnCamber2[n,-1,0]+res, downstreamExtnCamber2[n,-1,1]])))
-    
+
     deltaThetaLE1 = fsolve(dy_dx, x0=0, args=(deltaMprimeLE1, alphaLE1))
     deltaThetaLE2 = fsolve(dy_dx, x0=0, args=(deltaMprimeLE2, alphaLE2))
     deltaThetaTE1 = fsolve(dy_dx, x0=0, args=(deltaMprimeTE1, alphaTE1))
     deltaThetaTE2 = fsolve(dy_dx, x0=0, args=(deltaMprimeTE2, alphaTE2))
-    
+
     #%% Define final extensions
     thetaInlet1 = upstreamExtnCamber1[:,-1,1] - deltaThetaLE1
     thetaInlet2 = upstreamExtnCamber2[:,-1,1] - deltaThetaLE2
     thetaOutlet1 = downstreamExtnCamber1[:,-1,1] - deltaThetaTE1
     thetaOutlet2 = downstreamExtnCamber2[:,-1,1] - deltaThetaTE2
-    upstreamExtnCamber1Adj[:,0,1] = thetaInlet1 
+    upstreamExtnCamber1Adj[:,0,1] = thetaInlet1
     upstreamExtnCamber2Adj[:,0,1] = thetaInlet2
-    downstreamExtnCamber1Adj[:,0,1] = thetaOutlet1 
+    downstreamExtnCamber1Adj[:,0,1] = thetaOutlet1
     downstreamExtnCamber2Adj[:,0,1] = thetaOutlet2
-    
+
     for nn in range(newNsection):
         leFunc1 = interp1d(upstreamExtnCamber1Adj[nn,:,0], upstreamExtnCamber1Adj[nn,:,1])
         upstreamCamber1[nn,:,1] = leFunc1(upstreamCamber1[nn,:,0])
@@ -3288,17 +3290,17 @@ def main() -> int:
         # For example, if input data in mm, scale = 0.001
 
     # Grid generation inputs
-    nrad = 40  # Number of radial points outside endwall BLs    
+    nrad = 40  # Number of radial points outside endwall BLs
     # optional BL definition parameters
     rhoref = 1.2  # base SI units (kg/m**3)
     Uref = 100.0  # base SI units (m/s)
-    LrefHub = 400.0  # input length units
-    LrefCas = 400.0  # input length units
+    LrefHub = 374.0  # input length units (cannot be calculated because it depends on components outside domain)
+    LrefCas = 374.0  # input length units (cannot be calculated because it depends on components outside domain)
     LrefBla = 75.0  # input length units (JD: this should be calculated = mean chord)
     muref = 1.8e-5  # base SI units (kg/(m*s))
-    yPlusHub = 2
-    yPlusCas = 2
-    yPlusBla = 2
+    yPlusHub = 5
+    yPlusCas = 5
+    yPlusBla = 5
     # have option to calculate BL parameters based on above, or just directly
     # provide BL thickness and first cell size (input units)
     delHub = calcBLdelta(rhoref,Uref,LrefHub*scale,muref)/scale  # or just set a value (in input units)
@@ -3316,9 +3318,9 @@ def main() -> int:
     additionalTangentialRefine = 8  # 1 = no extra refinement. This is a factor on the midpassage cell size.
     # Axial clustering parameters
     # Leading/trailing edge clustering parameters
-    dax1primeLE = 0.003  # This is for about half the blade, so 0.01 means 0.5% chord
+    dax1primeLE = 0.001  #0.003  # This is for about half the blade, so 0.01 means 0.5% chord
     rLE = 1.2  # expansion ratio for clustering of cells near the LE of the blades
-    dax1primeTE = 0.002  # This is for about half the blade, so 0.01 means 0.5% chord
+    dax1primeTE = 0.001  #0.002  # This is for about half the blade, so 0.01 means 0.5% chord
     rTE = 1.2  # expansion ratio for clustering of cells near the LE of the blades
     # Up/downstream expansion ratios of cells further than 1/2 chord away from blades
     additionalAxialRefine = 2  # 1 = no extra refinement. This is a factor on the midpassage cell size.
@@ -3426,9 +3428,6 @@ def main() -> int:
         blade2LECyl, blade2TECyl, blade2pCyl, blade2nCyl = getLETEandSplit(blade2Cyl, Nr)
         # Get meridional curves on interior sections from LE/TE to inlet/outlet
         meridCurve = getMeridCurve(blade1LECyl, blade1TECyl, blade2LECyl, blade2TECyl, hub, cas, res)
-        # Get initial estimates of directions for upstream/downstream extensions for each section
-        angleLE1, angleTE1 = getInitExtAngles(blade1LECyl, blade1TECyl, blade1pCyl, blade1nCyl)
-        angleLE2, angleTE2 = getInitExtAngles(blade2LECyl, blade2TECyl, blade2pCyl, blade2nCyl)
         
         # Find offset end vertices on each section, update blade sides to include midpoints
         blade1OffsetVerticesCyl, blade1pCyl, blade1nCyl, mid1P, mid1N = getOffsetVertices(blade1pCyl,
@@ -3464,6 +3463,13 @@ def main() -> int:
                                                     meridCurve,
                                                     bladeRes,
                                                     res)
+
+        # Get initial estimates of directions for upstream/downstream extensions for each section
+        #angleLE1, angleTE1 = getInitExtAngles(blade1LECyl, blade1TECyl, blade1pCyl, blade1nCyl)
+        #angleLE2, angleTE2 = getInitExtAngles(blade2LECyl, blade2TECyl, blade2pCyl, blade2nCyl)
+        angleLE1, angleTE1 = getInitExtAngles(LE1mpt, TE1mpt, blade1pmpt, blade1nmpt)
+        angleLE2, angleTE2 = getInitExtAngles(LE2mpt, TE2mpt, blade2pmpt, blade2nmpt)
+
         # Determine optimal extension directions, fully define the extensions
         blade1UpExtmpt, blade2UpExtmpt, blade1DnExtmpt, blade2DnExtmpt = defineExt(blade1pmpt, blade1nmpt, blade2pmpt, blade2nmpt, offsetVertices1mpt, offsetVertices2mpt, LE1mpt, LE2mpt, TE1mpt, TE2mpt, upstreamMprime, downstreamMprime, offsetUpstreamMprime, offsetDownstreamMprime, angleLE1, angleTE1, angleLE2, angleTE2, res)
         # Set up cross-passage and offset curves + do arclength mapping
@@ -3646,8 +3652,6 @@ def main() -> int:
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
         calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap)
-
-        bob = alice
 
     return 0
 
