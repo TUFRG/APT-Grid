@@ -1029,6 +1029,13 @@ def defineExt(blade1pmpt, blade1nmpt, blade2pmpt, blade2nmpt, offset1mpt, offset
     return upstreamCamber1, upstreamCamber2, downstreamCamber1, downstreamCamber2
 
 
+# JD: UP TO HERE:
+# This is the function we need to work on, where we
+# need to use the same idea of how the arc length maps
+# are generated to get the points on the offsets in
+# such a way that when we do transfinite interpolation
+# we get points that always lie inside the bounding
+# curves.
 def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
                      LE2mpt, LE1mpt, TE2mpt, TE1mpt,
                      blade2pmpt, blade2nmpt, blade1pmpt, blade1nmpt,
@@ -1853,6 +1860,8 @@ def fillBladeToOffset(crossPassageUpCyl, crossPassageDnCyl, lowThetaCyl, highThe
     casPtsCylNodes = tf.transfinite3D(crossPassageUpCyl[-1, :, :], crossPassageDnCyl[-1, :, :], lowThetaCyl[-1, :, :], highThetaCyl[-1, :, :])
     casPtsCyl = casPtsCylNodes.reshape(crossPassagePts, alongPassagePts, 3)
     casPtsCyl = np.swapaxes(casPtsCyl, 0, 1)
+
+    bob = alice
 
     return hubPtsCyl, casPtsCyl
 
@@ -3689,10 +3698,10 @@ def main() -> int:
 
         # Define interior nodes for inlet, outlet, hub, casing
         inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, passageRes)
-        blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
-                                                                 midCurve1Cyl,
-                                                                 blade1UpCyl,
-                                                                 offset1UpCyl)
+        #blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
+        #                                                         midCurve1Cyl,
+        #                                                         blade1UpCyl,
+        #                                                         offset1UpCyl)
         blade1DnHubPtsCyl, blade1DnCasPtsCyl = fillBladeToOffset(midCurve1Cyl,
                                                                  blade1toOffsetDnCyl,
                                                                  blade1DnCyl,
@@ -3705,6 +3714,15 @@ def main() -> int:
                                                                  blade2toOffsetDnCyl,
                                                                  offset2DnCyl,
                                                                  blade2DnCyl)
+
+        # JD: UP TO HERE - plot to check if problem fixed
+        plt.plot(blade1DnHubPtsCyl[:, :, 0]*blade1DnHubPtsCyl[:, :, 1], blade1DnHubPtsCyl[:, :, 2], 'ro')
+        plt.plot(blade1DnCyl[0, :, 0]*blade1DnCyl[0, :, 1], blade1DnCyl[0, :, 2], 'b-')
+        plt.axis('equal')
+        plt.show()
+
+        bob = alice
+                                                                 
         # Convert everything back to Cartesian coordinates
         blade1UpCart = cylToCart(blade1UpCyl)
         offset1UpCart = cylToCart(offset1UpCyl)
