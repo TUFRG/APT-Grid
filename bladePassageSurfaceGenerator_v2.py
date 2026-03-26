@@ -1198,12 +1198,11 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         # Resample offset curves such that their points
         # are at the intersections of (nearly) normal rays from the points on the
         # blade curves.
-        bob = alice
         offsetSplinedBlade12D[i] = offsetResample(blade=blade1nmpt[i],
                                                offset=offsetSplinedBlade12D[i],
                                                dist=dist1arr[i].max(),
                                                side='SS')
-        offsetSplinedBlade12D[i] = offsetResample(blade=blade2pmpt[i],
+        offsetSplinedBlade22D[i] = offsetResample(blade=blade2pmpt[i],
                                                offset=offsetSplinedBlade22D[i],
                                                dist=dist2arr[i].max(),
                                                side='PS')
@@ -1399,8 +1398,6 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
             blade2casUpArclenmap = highCas1
             blade2casDnArclenmap = highCas2
 
-    bob = alice
-
     return (LECurveRot, TECurveRot, offsetSplinedBlade22D, offsetSplinedBlade12D,
             blade1hubUpArclenmap, blade1hubDnArclenmap,
             blade1casUpArclenmap, blade1casDnArclenmap,
@@ -1532,7 +1529,7 @@ def mptToCyl(arrmpt, upstreamMprime, blade1PMprime, downstreamMprime, hub, cas):
 
     return arrCyl
 
-# JD: is something wrong with this function?
+
 def bladeToOffset(pt1, pt2, res, hub, cas):
     """
     Create a new curve via interpolation between two points
@@ -1639,29 +1636,6 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
     midCurve2Cyl =  np.zeros([newNsection,int(crossPassageRes),3])  # midCurve between offset and high theta blade
     
     for v in range(newNsection):
-        # JD: UP TO HERE
-        # have replaced calls to 'densifyCurve' with calls
-        # to my new function 'changeNumPointsKeepDist', which
-        # takes just 2 arguments, 'curve' and 'N' (new number
-        # of points).
-        # That function seems to work as intended, though
-        # I need to sanity-check the results to ensure that
-        # it's OK to pass it data in cylindrical coordinates
-        # rather than converting 'curve' to Cartesian first
-        # and then converting the output back to cylindrical.
-        #
-        # The only issue is that the offsets (not the blades)
-        # end up with points that are in the wrong spot at mid-
-        # chord. I think this is an input mismatch that somehow
-        # didn't mess things up before, but does now (not sure why).
-        # Need to fix.
-        #
-        # Have checked that the issue seems to arise with both
-        # offsets, but is worse for blade 2 maybe.
-        # The issue is not from the refined curve matching, the
-        # issue instead is that the offset vertices don't actually
-        # lie on the offset curves!
-        # Need to figure out why that's what is happening.
         blade1Idx = np.argmin(np.abs(blade1Cyl[v][:, 2] - mid1[v][2]))
         highThetaB1 = blade1Cyl[v][0:blade1Idx+1]
         # blade1UpCyl[v] = densifyCurve(highThetaB1, bladeRes, 'LE')
@@ -1678,7 +1652,10 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
         # blade2DnCyl[v] = densifyCurve(lowThetaB2, bladeRes, 'TE')
         blade2DnCyl[v] = changeNumPointsKeepDist(lowThetaB2, bladeRes)
 
-        offset1CylM = insertPoint(offset1Cyl[v], offsetVertices1Cyl[v][1])
+        #offset1CylM = insertPoint(offset1Cyl[v], offsetVertices1Cyl[v][1])
+        # line above replaced with the line below to avoid wiggling in the
+        # offset curve
+        offset1CylM = offset1Cyl[v]
         offset1Idx = np.argmin(np.abs(offset1CylM[:, 2] - offsetVertices1Cyl[v][1][2]))
         highThetaO1 = offset1CylM[0:offset1Idx+1]
         # offset1UpCyl[v] = densifyCurve(highThetaO1, bladeRes, 'LE')
@@ -1687,7 +1664,10 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
         # offset1DnCyl[v] = densifyCurve(highThetaO2, bladeRes, 'TE')
         offset1DnCyl[v] = changeNumPointsKeepDist(highThetaO2, bladeRes)
 
-        offset2CylM = insertPoint(offset2Cyl[v], offsetVertices2Cyl[v][3])
+        #offset2CylM = insertPoint(offset2Cyl[v], offsetVertices2Cyl[v][3])
+        # line above replaced with the line below to avoid wiggling in the
+        # offset curve
+        offset2CylM = offset2Cyl[v]
         offset2Idx = np.argmin(np.abs(offset2CylM[:, 2] - offsetVertices2Cyl[v][3][2]))
         lowThetaO1 = offset2CylM[0:offset2Idx+1]
         # offset2UpCyl[v] = densifyCurve(lowThetaO1, bladeRes, 'LE')
@@ -1697,12 +1677,20 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
         offset2DnCyl[v] = changeNumPointsKeepDist(lowThetaO2, bladeRes)
 
         # JD: debugging -- make a plot to show the issue
-        plt.plot(offset1Cyl[v][:,0]*offset1Cyl[v][:,1], offset1Cyl[v][:,2], 'b-')
-        plt.plot(offsetVertices1Cyl[v][1][0]*offsetVertices1Cyl[v][1][1], offsetVertices1Cyl[v][1][2], 'rs')
-        plt.axis('equal')
-        plt.show()
+        #plt.plot(offset1Cyl[v][:,0]*offset1Cyl[v][:,1], offset1Cyl[v][:,2], 'b-')
+        #plt.plot(offset1UpCyl[v, :, 0]*offset1UpCyl[v, :, 1], offset1UpCyl[v, :, 2], '.-m')
+        #plt.plot(offset1DnCyl[v, :, 0]*offset1DnCyl[v, :, 1], offset1DnCyl[v, :, 2], '.-k')
+        #plt.plot(offsetVertices1Cyl[v][1][0]*offsetVertices1Cyl[v][1][1], offsetVertices1Cyl[v][1][2], 'rs')
+        #plt.plot(mid1[v,0]*mid1[v,1],mid1[v,2],'ko')
+        #plt.plot(offset2Cyl[v][:,0]*offset2Cyl[v][:,1], offset2Cyl[v][:,2], 'b-')
+        #plt.plot(offset2UpCyl[v, :, 0]*offset2UpCyl[v, :, 1], offset2UpCyl[v, :, 2], '.-m')
+        #plt.plot(offset2DnCyl[v, :, 0]*offset2DnCyl[v, :, 1], offset2DnCyl[v, :, 2], '.-k')
+        #plt.plot(offsetVertices2Cyl[v][3][0]*offsetVertices2Cyl[v][3][1], offsetVertices2Cyl[v][3][2], 'rs')
+        #plt.plot(mid2[v,0]*mid2[v,1],mid2[v,2],'ko')
+        #plt.axis('equal')
+        #plt.show()
 
-        bob = alice
+        #bob = alice
 
         # "midCurve" --> just the set of four points blade-offset-offset-blade on this section
         # (to clarify: these are in order of increasing theta)
@@ -1719,7 +1707,7 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
         midCurve1Cyl[v][:,0] = np.linspace(midCurve[:,0][2], midCurve[:,0][3], int(crossPassageRes))
 
     # JD: adding to try to clean up mapping
-
+    """
     blade1UpCart = cylToCart(blade1UpCyl)
     blade1DnCart = cylToCart(blade1DnCyl)
     blade2UpCart = cylToCart(blade2UpCyl)
@@ -1740,7 +1728,7 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
     offset1DnCyl = CartToCyl(offset1DnCart)
     offset2UpCyl = CartToCyl(offset2UpCart)
     offset2DnCyl = CartToCyl(offset2DnCart)
-
+    """
     return blade1UpCyl, blade1DnCyl, blade2UpCyl, blade2DnCyl, offset1UpCyl, offset1DnCyl, offset2UpCyl, offset2DnCyl, midCurveMidCyl, midCurve1Cyl, midCurve2Cyl
 
 
@@ -1937,6 +1925,7 @@ def fillBladeToOffset(crossPassageUpCyl, crossPassageDnCyl, lowThetaCyl, highThe
     casPtsCyl = casPtsCylNodes.reshape(crossPassagePts, alongPassagePts, 3)
     casPtsCyl = np.swapaxes(casPtsCyl, 0, 1)
 
+    """
     for i in range(hubPtsCyl.shape[0]):
         plt.plot(hubPtsCyl[i, :, 0]*hubPtsCyl[i, :, 1], hubPtsCyl[i, :, 2], 'r.-')
     plt.plot(lowThetaCyl[0, :, 0]*lowThetaCyl[0, :, 1], lowThetaCyl[0, :, 2],'b')
@@ -1945,7 +1934,7 @@ def fillBladeToOffset(crossPassageUpCyl, crossPassageDnCyl, lowThetaCyl, highThe
     plt.show()
 
     bob = alice
-
+    """
     return hubPtsCyl, casPtsCyl
 
 
@@ -3767,10 +3756,10 @@ def main() -> int:
 
         # Define interior nodes for inlet, outlet, hub, casing
         inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, passageRes)
-        #blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
-        #                                                         midCurve1Cyl,
-        #                                                         blade1UpCyl,
-        #                                                         offset1UpCyl)
+        blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
+                                                                 midCurve1Cyl,
+                                                                 blade1UpCyl,
+                                                                 offset1UpCyl)
         blade1DnHubPtsCyl, blade1DnCasPtsCyl = fillBladeToOffset(midCurve1Cyl,
                                                                  blade1toOffsetDnCyl,
                                                                  blade1DnCyl,
@@ -3785,12 +3774,12 @@ def main() -> int:
                                                                  blade2DnCyl)
 
         # JD: UP TO HERE - plot to check if problem fixed
-        plt.plot(blade1DnHubPtsCyl[:, :, 0]*blade1DnHubPtsCyl[:, :, 1], blade1DnHubPtsCyl[:, :, 2], 'ro')
-        plt.plot(blade1DnCyl[0, :, 0]*blade1DnCyl[0, :, 1], blade1DnCyl[0, :, 2], 'b-')
-        plt.axis('equal')
-        plt.show()
+        #plt.plot(blade1DnHubPtsCyl[:, :, 0]*blade1DnHubPtsCyl[:, :, 1], blade1DnHubPtsCyl[:, :, 2], 'ro')
+        #plt.plot(blade1DnCyl[0, :, 0]*blade1DnCyl[0, :, 1], blade1DnCyl[0, :, 2], 'b-')
+        #plt.axis('equal')
+        #plt.show()
 
-        bob = alice
+        #bob = alice
                                                                  
         # Convert everything back to Cartesian coordinates
         blade1UpCart = cylToCart(blade1UpCyl)
@@ -3868,7 +3857,7 @@ def main() -> int:
         print('Computing and writing parameters for passage {}'.format(a))
         calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap)
 
-        bob = alice
+        #bob = alice
         
     return 0
 
