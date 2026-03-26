@@ -17,7 +17,7 @@ import sys
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d, CubicSpline
+from scipy.interpolate import interp1d, CubicSpline, splprep
 from scipy.optimize import fsolve
 import model_function as mf
 import TransfiniteInterpolation as tf
@@ -1029,13 +1029,6 @@ def defineExt(blade1pmpt, blade1nmpt, blade2pmpt, blade2nmpt, offset1mpt, offset
     return upstreamCamber1, upstreamCamber2, downstreamCamber1, downstreamCamber2
 
 
-# JD: UP TO HERE:
-# This is the function we need to work on, where we
-# need to use the same idea of how the arc length maps
-# are generated to get the points on the offsets in
-# such a way that when we do transfinite interpolation
-# we get points that always lie inside the bounding
-# curves.
 def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
                      LE2mpt, LE1mpt, TE2mpt, TE1mpt,
                      blade2pmpt, blade2nmpt, blade1pmpt, blade1nmpt,
@@ -1056,6 +1049,8 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
     midchordSS1 = np.zeros([newNsection,2])
     midchordPS2 = np.zeros([newNsection,2])
     midchordSS2 = np.zeros([newNsection,2])
+    dist1arr = np.zeros([newNsection,3])
+    dist2arr = np.zeros([newNsection,3])
     for m in range(newNsection):
         # Now we must figure out the angles/slopes/directions for the LE/TE
         # curves as well as the offsets.
@@ -1159,6 +1154,7 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         distSS1 = mf.dist2D(ssInterX[0], ssInterX[1], offsetVertices1mpt[i][2,0], offsetVertices1mpt[i][2,1])
         distPS1 = mf.dist2D(psInterX[0], psInterX[1], offsetVertices1mpt[i][1,0], offsetVertices1mpt[i][1,1])
         dist1 = np.array([distLE1, distSS1, distTE1])
+        dist1arr[i] = dist1
         
         #Do the same for blade2
         blade2 = np.concatenate((blade2pmpt[i][:-1], blade2nmpt[i][::-1])) #Joing both surfaces to create a closed loop
@@ -1172,6 +1168,7 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         distSS2 = mf.dist2D(ss2InterX[0], ss2InterX[1], offsetVertices2mpt[i][2,0], offsetVertices2mpt[i][2,1])
         distPS2 = mf.dist2D(ps2InterX[0], ps2InterX[1], offsetVertices2mpt[i][1,0], offsetVertices2mpt[i][1,1])
         dist2 = np.array([distLE2, distPS2, distTE2])
+        dist2arr[i] = dist2
         
         center = mf.MidPts(np.vstack((ssInterX, ps2InterX))) #this is the mid point between the midpoints on the suction side of blade1 and pressure side of blade2
     
@@ -1179,7 +1176,7 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         # curve1 = createOffsetCurve(bladePr=blade1SS2D[i], offsetPt=offsetBlade12D[i], interX=ssInterX, dist=dist1, center=center, LEslope=offsetSlopeLE1, TEslope=offsetSlopeTE1, side='hi')
         curve1 = createOffsetCurve(bladePr=blade1nmpt[i], offsetPt=offsetVertices1mpt[i], interX=ssInterX, dist=dist1, center=center, LEslope=offsetSlopeLE1, TEslope=offsetSlopeTE1, side='hi')
 
-        offsetSplinedBlade12D[i] = mf.densify_curve_robust(curve1, bladeRes)
+        offsetSplinedBlade12D[i] = mf.densify_curve_simple(curve1, bladeRes)
         #densifyCurve(curve1, bladeRes, 'both')
         midchordPS1[i] = psInterX
         midchordSS1[i] = ssInterX
@@ -1188,7 +1185,7 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         # curve2 = createOffsetCurve(bladePr=blade2PS2D[i], offsetPt=offsetBlade22D[i], interX=ps2InterX, dist=dist2, center=center, LEslope=offsetSlopeLE2, TEslope=offsetSlopeTE2, side='lo')
         curve2 = createOffsetCurve(bladePr=blade2pmpt[i], offsetPt=offsetVertices2mpt[i], interX=ps2InterX, dist=dist2, center=center, LEslope=offsetSlopeLE2, TEslope=offsetSlopeTE2, side='lo')
         
-        offsetSplinedBlade22D[i] = mf.densify_curve_robust(curve2, bladeRes)
+        offsetSplinedBlade22D[i] = mf.densify_curve_simple(curve2, bladeRes)
         #densifyCurve(curve2, bladeRes, 'both')
         midchordPS2[i] = ps2InterX
         midchordSS2[i] = ss2InterX   
@@ -1197,8 +1194,21 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         blade2Func = CubicSpline(blade2pmpt[i][:,0], blade2pmpt[i][:,1]) # Interpolation function for low theta blade
         offset1Func = CubicSpline(offsetSplinedBlade12D[i][:,0], offsetSplinedBlade12D[i][:,1])
         offset2Func = CubicSpline(offsetSplinedBlade22D[i][:,0], offsetSplinedBlade22D[i][:,1])
+
+        # Resample offset curves such that their points
+        # are at the intersections of (nearly) normal rays from the points on the
+        # blade curves.
+        bob = alice
+        offsetSplinedBlade12D[i] = offsetResample(blade=blade1nmpt[i],
+                                               offset=offsetSplinedBlade12D[i],
+                                               dist=dist1arr[i].max(),
+                                               side='SS')
+        offsetSplinedBlade12D[i] = offsetResample(blade=blade2pmpt[i],
+                                               offset=offsetSplinedBlade22D[i],
+                                               dist=dist2arr[i].max(),
+                                               side='PS')
     
-        # 6) get arclength mapping for hub and casing sections
+        # 6) get arclength mapping for hub and casing sections (for mesh generaetion)
         if i == 0:
             #H is high, L is low, 1 is upstream and 2 is downstream. I am trying to replace naming convention from here
             mBladeH1 = cosineSpace(bladeRes+1, blade1nmpt[i][0,0], ssInterX[0]) #upstream portion of the high theta blade
@@ -1389,109 +1399,101 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
             blade2casUpArclenmap = highCas1
             blade2casDnArclenmap = highCas2
 
-    """
-    # Finally, resample the offset curves using the arclength maps
-    # The objective is to make it so that lines going from each point on the
-    # blade surfaces to the corresponding point (equal index) on the offset
-    # surfaces will be quasi-normal to the blade surface. The arclength maps
-    # just created can help with this, though there are a few extra steps
-    # involved:
-    #
-    # 1. arc length maps are split between front and back halfs, and
-    # are only defined on the hub and casing. So, a first step is to
-    # combine the arc length distributions for blades and offsets,
-    # but as these are fractions, we need to go back to actual
-    # arc lengths to help us. Need to know where the split happens...
-    midchordmprime = np.average((midchordSS1[:, 0], midchordSS2[:, 0], midchordPS1[:, 0], midchordPS2[:, 0]), axis=0)
-    # this varies by section, but is constant for both blades and offsets
-    # at each section.
-
-    # this process doesn't need to be exact -- find closest point
-
-    b2uS = np.zeros(newNsection)
-    b1uS = np.zeros(newNsection)
-    o2uS = np.zeros(newNsection)
-    o1uS = np.zeros(newNsection)
-    
-    b2dS = np.zeros(newNsection)
-    b1dS = np.zeros(newNsection)
-    o2dS = np.zeros(newNsection)
-    o1dS = np.zeros(newNsection)
-
-    # Get arclength of each half of every curve
-    for i in range(newNsection):
-        # Find the index of the minimum difference
-        b2splitIndex = np.abs(blade2pmpt[i, :, 0] - midchordmprime[i]).argmin()
-        b1splitIndex = np.abs(blade2pmpt[i, :, 0] - midchordmprime[i]).argmin()
-        o2splitIndex = np.abs(offsetSplinedBlade22D[i, :, 0] - midchordmprime[i]).argmin()
-        o1splitIndex = np.abs(offsetSplinedBlade12D[i, :, 0] - midchordmprime[i]).argmin()
-        # Get total arclength of each part
-        b2uS[i] = np.sum(np.linalg.norm(np.diff(blade2pmpt[i, 0:b2splitIndex, :], axis=0), axis=1))
-        b1uS[i] = np.sum(np.linalg.norm(np.diff(blade2pmpt[i, 0:b1splitIndex, :], axis=0), axis=1))
-        o2uS[i] = np.sum(np.linalg.norm(np.diff(offsetSplinedBlade22D[i, 0:o2splitIndex, :], axis=0), axis=1))
-        o1uS[i] = np.sum(np.linalg.norm(np.diff(offsetSplinedBlade12D[i, 0:o1splitIndex, :], axis=0), axis=1))
-        
-        b2dS[i] = np.sum(np.linalg.norm(np.diff(blade2pmpt[i, b2splitIndex:, :], axis=0), axis=1))
-        b1dS[i] = np.sum(np.linalg.norm(np.diff(blade2pmpt[i, b1splitIndex:, :], axis=0), axis=1))
-        o2dS[i] = np.sum(np.linalg.norm(np.diff(offsetSplinedBlade22D[i, o2splitIndex:, :], axis=0), axis=1))
-        o1dS[i] = np.sum(np.linalg.norm(np.diff(offsetSplinedBlade12D[i, o1splitIndex:, :], axis=0), axis=1))
-
-    # renormalize arclength fractions (hub and casing)
-    b2hubMap = np.concatenate((blade2hubUpArclenmap[:, 0]*b2uS[0], b2uS[0]+blade2hubDnArclenmap[:, 0]*b2dS[0])) / (b2uS[0] + b2dS[0])
-    b1hubMap = np.concatenate((blade1hubUpArclenmap[:, 0]*b1uS[0], b1uS[0]+blade1hubDnArclenmap[:, 0]*b1dS[0])) / (b1uS[0] + b1dS[0])
-    o2hubMap = np.concatenate((blade2hubUpArclenmap[:, 1]*o2uS[0], o2uS[0]+blade2hubDnArclenmap[:, 1]*o2dS[0])) / (o2uS[0] + o2dS[0])
-    o1hubMap = np.concatenate((blade1hubUpArclenmap[:, 1]*o1uS[0], o1uS[0]+blade1hubDnArclenmap[:, 1]*o1dS[0])) / (o1uS[0] + o1dS[0])
-
-    b2casMap = np.concatenate((blade2casUpArclenmap[:, 0]*b2uS[-1], b2uS[-1]+blade2casDnArclenmap[:, 0]*b2dS[-1])) / (b2uS[-1] + b2dS[-1])
-    b1casMap = np.concatenate((blade1casUpArclenmap[:, 0]*b1uS[-1], b1uS[-1]+blade1casDnArclenmap[:, 0]*b1dS[-1])) / (b1uS[-1] + b1dS[-1])
-    o2casMap = np.concatenate((blade2casUpArclenmap[:, 1]*o2uS[-1], o2uS[-1]+blade2casDnArclenmap[:, 1]*o2dS[-1])) / (o2uS[-1] + o2dS[-1])
-    o1casMap = np.concatenate((blade1casUpArclenmap[:, 1]*o1uS[-1], o1uS[-1]+blade1casDnArclenmap[:, 1]*o1dS[-1])) / (o1uS[-1] + o1dS[-1])
-
-    # make sure all have same number of points
-    b2hubMap = mf.densify_curve_robust(b2hubMap, bladeRes)
-    b1hubMap = mf.densify_curve_robust(b1hubMap, bladeRes)
-    o2hubMap = mf.densify_curve_robust(o2hubMap, bladeRes)
-    o1hubMap = mf.densify_curve_robust(o1hubMap, bladeRes)
-
-    b2casbMap = mf.densify_curve_robust(b2casMap, bladeRes)
-    b1casMap = mf.densify_curve_robust(b1casMap, bladeRes)
-    o2casMap = mf.densify_curve_robust(o2casMap, bladeRes)
-    o1casMap = mf.densify_curve_robust(o1casMap, bladeRes)
-
-    # Interpolate offset points at ALL sections to follow
-    # new arc length maps. This is a 2-step interpolation.
-    # First, interpolate the maps between hub and casing
-    # to the current section. This can be done crudely by
-    # section number rather than distance since in m'-
-    # theta, we have no idea how close/far apart the sections
-    # are.
-    # Second, once we have a "local" map, interpolate (linear)
-    # the existing points to have the same number of points,
-    # but following the specified arclength fraction distribution.
-    for i in range(newNsection):
-        o2locMap = ((newNsection - 1 - i)*o2hubMap + i*o2casMap)/(newNsection - 1)
-        o1locMap = ((newNsection - 1 - i)*o1hubMap + i*o1casMap)/(newNsection - 1)
-
-        offsetSplinedBlade22D[i] = matchArcLengthFractions2(o2locMap, offsetSplinedBlade22D[i])
-        offsetSplinedBlade12D[i] = matchArcLengthFractions2(o1locMap, offsetSplinedBlade12D[i])
-
-
-    # Relevant variables besides arc length maps:
-    # offsetSplinedBlade22D -- LOW THETA OFFSET
-    # offsetSplinedBlade12D -- HIGH THETA OFFSET
-    # Note: variable names above and below are opposite of 
-    # what actual data contains.
-    # blade2pmpt -- LOW THETA BLADE
-    # blade1nmpt -- HIGH THETA BLADE
-    
-
     bob = alice
-    """
+
     return (LECurveRot, TECurveRot, offsetSplinedBlade22D, offsetSplinedBlade12D,
             blade1hubUpArclenmap, blade1hubDnArclenmap,
             blade1casUpArclenmap, blade1casDnArclenmap,
             blade2hubUpArclenmap, blade2hubDnArclenmap,
             blade2casUpArclenmap, blade2casDnArclenmap)
+
+
+def count_consecutive(arr, n):
+    """
+    from https://stackoverflow.com/questions/54597864/count-consecutive-equal-values-in-array
+    by akuiper
+    """
+    # pad a with False at both sides for edge cases when array starts or ends with n
+    d = np.diff(np.concatenate(([False], arr == n, [False])).astype(int))
+    # subtract indices when value changes from False to True from indices where value changes from True to False
+    return np.flatnonzero(d == -1) - np.flatnonzero(d == 1)
+    
+
+def offsetResample(blade, offset, dist, side):
+    # Resample offset curves such that their points
+    # are at the intersections of (nearly) normal rays from the points on the
+    # blade curves.
+    bladeRes = blade.shape[0]
+    # 1. For every point on the blade curve, define a normal direction
+    slopesBlade, midptsBlade = slopeAndMidPtsLoop(blade)
+    # 2. Extend a ray from each blade curve point along that normal a distance >
+    #   than distance between the blade and offset curves
+    newOffset = pointAtDistLoop(midptsBlade, slopesBlade, np.full(bladeRes,1.5*dist), side)
+    # 3. Explicitly set the first and last points to not change.
+    newOffset_intermediate = np.zeros((bladeRes+1, 2))
+    newOffset_intermediate[0, :] = offset[0, :]
+    newOffset_intermediate[-1, :] = offset[-1, :]
+    # 3a. Define a local blade curve with the midpoints + first/last point
+    blade_intermediate = np.zeros((bladeRes+1, 2))
+    blade_intermediate[1:-1, :] = midptsBlade
+    blade_intermediate[0, :] = blade[0, :]
+    blade_intermediate[-1, :] = blade[-1, :]
+    # 4. Find the points of intersection, if they exists.
+    line = np.zeros((bladeRes-1, 2, 2))
+    for ii in range(bladeRes-1):
+        line[ii] = np.vstack((midptsBlade[ii, :], newOffset[ii]))
+        newOffset_intermediate[ii+1] = mf.TwoLinesIntersect(line[ii], offset)
+    # 5. For points with no point of intersection, linearly sample (based on
+    #   arclength fraction) between points with defined intersections
+    lineWarning = np.linalg.norm(newOffset_intermediate[:, :],axis=1)
+    # the above line works because the current TwoLinesIntersect function
+    # returns (0, 0) when there is no intersection, so the 2-norm of
+    # that row will be identically zero.
+    
+    # Get indices of non-intersection points
+    indnoIntersection = np.where(lineWarning==0)[0]
+    if indnoIntersection.shape[0] == 0:
+        # no non-intersection points
+        # do nothing
+        pass
+    else:
+        # do resampling
+        if indnoIntersection.shape[0] == 1:
+            # one single-element segment
+            segments = 1
+            segmentStart = np.array((0))
+            lenSegment = np.array((1))
+        elif np.diff(indnoIntersection).max()>1:
+            # multiple segments
+            segments = 2
+            segmentStart = np.zeros(segments)
+            lenSegment = np.zeros(segments)
+            lenSegment = count_consecutive(np.diff(indnoIntersection), 1)
+            segmentStart[1] = lenSegment[0]
+        elif np.diff(indnoIntersection).max()==1:
+            # one multi-element segment
+            segments = 1
+            segmentStart = np.array((0)).reshape(-1,1)
+            lenSegment = np.array((len(indnoIntersection)))
+        segmentStart = segmentStart.reshape(-1,1)
+        lenSegment = lenSegment.reshape(-1, 1)
+        for ii in range(segments):
+            localBladePts = blade_intermediate[indnoIntersection[segmentStart[ii][0]]-1:indnoIntersection[segmentStart[ii][0]+lenSegment[ii][0]-1]+2, :]
+            boundingOffsetPts = newOffset_intermediate[indnoIntersection[segmentStart[ii][0]]-1:indnoIntersection[segmentStart[ii][0]+lenSegment[ii][0]-1]+2, :][[0, -1], :]
+            # get fractional arclengths for localBladePts
+            bladeArcFrac = arcLenFracFromPoints(localBladePts)
+            # get distance between boundingOffsetPts
+            offsetSegmentLen = np.linalg.norm(boundingOffsetPts, axis=1)
+            # create new interior points at fractional arclengths between boundingOffsetPts
+            offsetInterp = interp1d(np.array((0, 1)), boundingOffsetPts, axis=0)
+            offsetInteriorPoints = offsetInterp(bladeArcFrac[1:-1])
+            # replace new interior points in newOffset1_intermediate
+            newOffset_intermediate[indnoIntersection[segmentStart[ii][0]]:indnoIntersection[segmentStart[ii][0]+lenSegment[ii][0]-1]+1, :] = offsetInteriorPoints
+
+    # Get back to correct number of points on offset
+    _, offset[1:-1, :] = slopeAndMidPtsLoop(newOffset_intermediate[1:-1, :])
+
+    return offset
 
 
 def mptToCyl(arrmpt, upstreamMprime, blade1PMprime, downstreamMprime, hub, cas):
@@ -1637,31 +1639,70 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
     midCurve2Cyl =  np.zeros([newNsection,int(crossPassageRes),3])  # midCurve between offset and high theta blade
     
     for v in range(newNsection):
+        # JD: UP TO HERE
+        # have replaced calls to 'densifyCurve' with calls
+        # to my new function 'changeNumPointsKeepDist', which
+        # takes just 2 arguments, 'curve' and 'N' (new number
+        # of points).
+        # That function seems to work as intended, though
+        # I need to sanity-check the results to ensure that
+        # it's OK to pass it data in cylindrical coordinates
+        # rather than converting 'curve' to Cartesian first
+        # and then converting the output back to cylindrical.
+        #
+        # The only issue is that the offsets (not the blades)
+        # end up with points that are in the wrong spot at mid-
+        # chord. I think this is an input mismatch that somehow
+        # didn't mess things up before, but does now (not sure why).
+        # Need to fix.
+        #
+        # Have checked that the issue seems to arise with both
+        # offsets, but is worse for blade 2 maybe.
+        # The issue is not from the refined curve matching, the
+        # issue instead is that the offset vertices don't actually
+        # lie on the offset curves!
+        # Need to figure out why that's what is happening.
         blade1Idx = np.argmin(np.abs(blade1Cyl[v][:, 2] - mid1[v][2]))
         highThetaB1 = blade1Cyl[v][0:blade1Idx+1]
-        blade1UpCyl[v] = densifyCurve(highThetaB1, bladeRes, 'LE')
+        # blade1UpCyl[v] = densifyCurve(highThetaB1, bladeRes, 'LE')
+        blade1UpCyl[v] = changeNumPointsKeepDist(highThetaB1, bladeRes)
         highThetaB2 = blade1Cyl[v][blade1Idx:]
-        blade1DnCyl[v] = densifyCurve(highThetaB2, bladeRes, 'TE')
+        # blade1DnCyl[v] = densifyCurve(highThetaB2, bladeRes, 'TE')
+        blade1DnCyl[v] = changeNumPointsKeepDist(highThetaB2, bladeRes)
 
         blade2Idx = np.argmin(np.abs(blade2Cyl[v][:, 2] - mid2[v][2]))
         lowThetaB1 = blade2Cyl[v][0:blade2Idx+1]
-        blade2UpCyl[v] = densifyCurve(lowThetaB1, bladeRes, 'LE')
+        # blade2UpCyl[v] = densifyCurve(lowThetaB1, bladeRes, 'LE')
+        blade2UpCyl[v] = changeNumPointsKeepDist(lowThetaB1, bladeRes)
         lowThetaB2 = blade2Cyl[v][blade2Idx:]
-        blade2DnCyl[v] = densifyCurve(lowThetaB2, bladeRes, 'TE')
+        # blade2DnCyl[v] = densifyCurve(lowThetaB2, bladeRes, 'TE')
+        blade2DnCyl[v] = changeNumPointsKeepDist(lowThetaB2, bladeRes)
 
         offset1CylM = insertPoint(offset1Cyl[v], offsetVertices1Cyl[v][1])
         offset1Idx = np.argmin(np.abs(offset1CylM[:, 2] - offsetVertices1Cyl[v][1][2]))
         highThetaO1 = offset1CylM[0:offset1Idx+1]
-        offset1UpCyl[v] = densifyCurve(highThetaO1, bladeRes, 'LE')
+        # offset1UpCyl[v] = densifyCurve(highThetaO1, bladeRes, 'LE')
+        offset1UpCyl[v] = changeNumPointsKeepDist(highThetaO1, bladeRes)
         highThetaO2 = offset1CylM[offset1Idx:]
-        offset1DnCyl[v] = densifyCurve(highThetaO2, bladeRes, 'TE')
+        # offset1DnCyl[v] = densifyCurve(highThetaO2, bladeRes, 'TE')
+        offset1DnCyl[v] = changeNumPointsKeepDist(highThetaO2, bladeRes)
 
         offset2CylM = insertPoint(offset2Cyl[v], offsetVertices2Cyl[v][3])
         offset2Idx = np.argmin(np.abs(offset2CylM[:, 2] - offsetVertices2Cyl[v][3][2]))
         lowThetaO1 = offset2CylM[0:offset2Idx+1]
-        offset2UpCyl[v] = densifyCurve(lowThetaO1, bladeRes, 'LE')
+        # offset2UpCyl[v] = densifyCurve(lowThetaO1, bladeRes, 'LE')
+        offset2UpCyl[v] = changeNumPointsKeepDist(lowThetaO1, bladeRes)
         lowThetaO2 = offset2CylM[offset2Idx:]
-        offset2DnCyl[v] = densifyCurve(lowThetaO2, bladeRes, 'TE')
+        # offset2DnCyl[v] = densifyCurve(lowThetaO2, bladeRes, 'TE')
+        offset2DnCyl[v] = changeNumPointsKeepDist(lowThetaO2, bladeRes)
+
+        # JD: debugging -- make a plot to show the issue
+        plt.plot(offset1Cyl[v][:,0]*offset1Cyl[v][:,1], offset1Cyl[v][:,2], 'b-')
+        plt.plot(offsetVertices1Cyl[v][1][0]*offsetVertices1Cyl[v][1][1], offsetVertices1Cyl[v][1][2], 'rs')
+        plt.axis('equal')
+        plt.show()
+
+        bob = alice
 
         # "midCurve" --> just the set of four points blade-offset-offset-blade on this section
         # (to clarify: these are in order of increasing theta)
@@ -1701,6 +1742,41 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
     offset2DnCyl = CartToCyl(offset2DnCart)
 
     return blade1UpCyl, blade1DnCyl, blade2UpCyl, blade2DnCyl, offset1UpCyl, offset1DnCyl, offset2UpCyl, offset2DnCyl, midCurveMidCyl, midCurve1Cyl, midCurve2Cyl
+
+
+def changeNumPointsKeepDist(curve, N):
+    # A new function that maintains the distribution of points
+    # along a curve.
+    # Maintain the frac arc length vs. frac points
+    Norig = curve.shape[0]
+    pointFracOrig = np.linspace(0, Norig, num=Norig, endpoint=True)/Norig
+    pointFracNew = np.linspace(0, N, num=N, endpoint=True)/N
+
+    # Currently assumes 3D data
+    # note this only makes sense in consistent coordinates,
+    # so input data and output data must both be in Cartesian
+    # ... maybe? Maybe not -- because of t-value based
+    # spline construction, it may not matter actually!
+
+    # 1. Get t values (fractional arclength)
+    tck, u = splprep([curve[:, 0], curve[:, 1], curve[:, 2]], s=0)
+    
+    # 2. Once the new arc length fractions are obtained,
+    # to map them back to actual coordintes, use
+    # cubic spline interpolation with the 'x' values using
+    # being the 't' values and the 'y' values being
+    # all 3 spatial coordinates
+    curveSplineObj = CubicSpline(u, curve, axis=0, bc_type='not-a-knot')
+
+    # 3. Get new arclength fracitons by maintaining
+    # the arc length fraction vs. fraction of points
+    # So the thing that's known is the new number of points
+    linInterpObj = interp1d(pointFracOrig, u)
+    uNew = linInterpObj(pointFracNew)
+
+    # 4. Finally, use the new arc length fractions to get
+    # new coordinates from the spline object
+    return curveSplineObj(uNew)
 
 
 def matchArcLengthFractions(curveToMatch, curveToModify):
@@ -1860,6 +1936,13 @@ def fillBladeToOffset(crossPassageUpCyl, crossPassageDnCyl, lowThetaCyl, highThe
     casPtsCylNodes = tf.transfinite3D(crossPassageUpCyl[-1, :, :], crossPassageDnCyl[-1, :, :], lowThetaCyl[-1, :, :], highThetaCyl[-1, :, :])
     casPtsCyl = casPtsCylNodes.reshape(crossPassagePts, alongPassagePts, 3)
     casPtsCyl = np.swapaxes(casPtsCyl, 0, 1)
+
+    for i in range(hubPtsCyl.shape[0]):
+        plt.plot(hubPtsCyl[i, :, 0]*hubPtsCyl[i, :, 1], hubPtsCyl[i, :, 2], 'r.-')
+    plt.plot(lowThetaCyl[0, :, 0]*lowThetaCyl[0, :, 1], lowThetaCyl[0, :, 2],'b')
+    plt.plot(highThetaCyl[0, :, 0]*highThetaCyl[0, :, 1], highThetaCyl[0, :, 2],'b')
+    plt.axis('equal')
+    plt.show()
 
     bob = alice
 
@@ -2610,17 +2693,17 @@ def slopeAndMidPtsLoop(points):
     midpoints = np.zeros((n, 2))
     for i in range(n):
         p1 = points[i]
-        p2 = points[(i + 1) % n]
+        p2 = points[i + 1]
         if (p2[0] - p1[0]) > 1e-10:
             slope = (p2[1] - p1[1])/(p2[0] - p1[0])
-        elif np.isinf(p2[1] - p1[1])/(p2[0] - p1[0]):
-            slope = 0
         else:
             slope = np.inf
         midpoint = (p1 + p2) / 2
         slopes[i] = -1/slope
         midpoints[i] = midpoint
     return slopes, midpoints
+
+
 def rotate_point(x, y, theta, inverse=False):
     if inverse:
         theta = -theta
@@ -2628,6 +2711,7 @@ def rotate_point(x, y, theta, inverse=False):
     sin_t = np.sin(theta)
     R = np.array([[cos_t, -sin_t], [sin_t, cos_t]])
     return R @ np.array([x, y]) 
+
 
 def createOffsetCurve(bladePr, offsetPt, interX, dist, center, LEslope, TEslope, side):
     Np = 21  # JD: what is this? I think this is to sample points every 5% chord
@@ -2680,34 +2764,18 @@ def createOffsetCurve(bladePr, offsetPt, interX, dist, center, LEslope, TEslope,
     # assemble overall curve
     curve = np.concatenate((curveLE, rotFullOffset[2:-2], curveTE[::-1]))
 
-    # The curve at this point has dense points along the Bezier curves at the
-    # end, but is very coarse with a point only every 5% chord or so in the
-    # central section.
-    #
-    # Need to resample this curve to get a consistent fraction of arclength
-    # map compared to the input data (bladePr).
+    return curve
 
-    # 1. Get arclength fractions of points in bladePr
-    bladeS = np.zeros(bladePr.shape[0])
-    bladeDiffs = np.diff(bladePr, axis=0)
-    bSloc = np.linalg.norm(bladeDiffs, axis=1)
-    bladeS[1:] = np.cumsum(bSloc)  # cumulative arclength
-    arcLengthFractionsb = bladeS / bladeS.max()
-    arcLengthFractionsb[-1] = 1
-    
-    # 2. Get arclenth fractions of current points in curve
-    curveS = np.zeros(curve.shape[0])
-    curveDiffs = np.diff(curve, axis=0)
-    cSloc = np.linalg.norm(curveDiffs, axis=1)
-    curveS[1:] = np.cumsum(cSloc)  # cumulative arclength
-    arcLengthFractionsc = curveS / curveS.max()
-    arcLengthFractionsc[-1] = 1
 
-    # 3. Interpolate new curve points (linear)
-    curveInterp = interp1d(arcLengthFractionsc, curve, axis=0)
-    curveNew = curveInterp(arcLengthFractionsb)
+def arcLenFracFromPoints(array):
+    localS = np.zeros(array.shape[0])
+    localDiffs = np.diff(array, axis=0)
+    Sloc = np.linalg.norm(localDiffs, axis=1)
+    localS[1:] = np.cumsum(Sloc)  # cumulative arclength
+    arcLengthFractions = localS / localS.max()
+    arcLengthFractions[-1] = 1
+    return arcLengthFractions
 
-    return curveNew
 
 def arcLenFrac(lengths):
     totalLength = np.sum(lengths)
@@ -2716,6 +2784,7 @@ def arcLenFrac(lengths):
     lenFrac = np.concatenate([[0], lenFrac])
     lenFrac[-1] = 1
     return lenFrac
+
     
 def offsetCurve(x, y, d, smooth=True, s=0, periodic=True):
     x = np.asarray(x)
