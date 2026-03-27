@@ -1676,59 +1676,25 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
         # offset2DnCyl[v] = densifyCurve(lowThetaO2, bladeRes, 'TE')
         offset2DnCyl[v] = changeNumPointsKeepDist(lowThetaO2, bladeRes)
 
-        # JD: debugging -- make a plot to show the issue
-        #plt.plot(offset1Cyl[v][:,0]*offset1Cyl[v][:,1], offset1Cyl[v][:,2], 'b-')
-        #plt.plot(offset1UpCyl[v, :, 0]*offset1UpCyl[v, :, 1], offset1UpCyl[v, :, 2], '.-m')
-        #plt.plot(offset1DnCyl[v, :, 0]*offset1DnCyl[v, :, 1], offset1DnCyl[v, :, 2], '.-k')
-        #plt.plot(offsetVertices1Cyl[v][1][0]*offsetVertices1Cyl[v][1][1], offsetVertices1Cyl[v][1][2], 'rs')
-        #plt.plot(mid1[v,0]*mid1[v,1],mid1[v,2],'ko')
-        #plt.plot(offset2Cyl[v][:,0]*offset2Cyl[v][:,1], offset2Cyl[v][:,2], 'b-')
-        #plt.plot(offset2UpCyl[v, :, 0]*offset2UpCyl[v, :, 1], offset2UpCyl[v, :, 2], '.-m')
-        #plt.plot(offset2DnCyl[v, :, 0]*offset2DnCyl[v, :, 1], offset2DnCyl[v, :, 2], '.-k')
-        #plt.plot(offsetVertices2Cyl[v][3][0]*offsetVertices2Cyl[v][3][1], offsetVertices2Cyl[v][3][2], 'rs')
-        #plt.plot(mid2[v,0]*mid2[v,1],mid2[v,2],'ko')
-        #plt.axis('equal')
-        #plt.show()
-
-        #bob = alice
-
         # "midCurve" --> just the set of four points blade-offset-offset-blade on this section
         # (to clarify: these are in order of increasing theta)
         midCurve = np.vstack((highThetaB2[0], highThetaO2[0], lowThetaO2[0], lowThetaB2[0]))
         # these arrays hold the surface points for the 3 sections of the midChord surface:
-        midCurveMidCyl[v][:,2] = np.linspace(midCurve[0,2], midCurve[-1,2], passageRes)
-        midCurve1Cyl[v][:,2] = np.linspace(midCurve[0,2], midCurve[-1,2], int(crossPassageRes))
-        midCurve2Cyl[v][:,2] = np.linspace(midCurve[0,2], midCurve[-1,2], int(crossPassageRes))
-        midCurveMidCyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[-1,1], passageRes)
-        midCurve1Cyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[-1,1], int(crossPassageRes))
-        midCurve2Cyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[-1,1],int(crossPassageRes))
-        midCurve2Cyl[v][:,0]= np.linspace(midCurve[:,0][0], midCurve[:,0][1], int(crossPassageRes))
-        midCurveMidCyl[v][:,0] = np.linspace(midCurve[:,0][1], midCurve[:,0][2], passageRes)
-        midCurve1Cyl[v][:,0] = np.linspace(midCurve[:,0][2], midCurve[:,0][3], int(crossPassageRes))
+        # 2   goes from blade2 to offset2 (increasing theta)
+        # Mid goes from offset2 to offset1 (increasing theta)
+        # 1   goes from offset1 to blade1 (incresaing theta)
+        midCurve2Cyl[v][:,2] = np.linspace(midCurve[0,2], midCurve[1,2], int(crossPassageRes))
+        midCurveMidCyl[v][:,2] = np.linspace(midCurve[1,2], midCurve[2,2], passageRes)
+        midCurve1Cyl[v][:,2] = np.linspace(midCurve[2,2], midCurve[3,2], int(crossPassageRes))
 
-    # JD: adding to try to clean up mapping
-    """
-    blade1UpCart = cylToCart(blade1UpCyl)
-    blade1DnCart = cylToCart(blade1DnCyl)
-    blade2UpCart = cylToCart(blade2UpCyl)
-    blade2DnCart = cylToCart(blade2DnCyl)
+        midCurve2Cyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[0,1],int(crossPassageRes))
+        midCurveMidCyl[v][:,1] = np.linspace(midCurve[1,1], midCurve[2,1], passageRes)
+        midCurve1Cyl[v][:,1] = np.linspace(midCurve[2,1], midCurve[3,1], int(crossPassageRes))
 
-    offset1UpCart = cylToCart(offset1UpCyl)
-    offset1DnCart = cylToCart(offset1DnCyl)
-    offset2UpCart = cylToCart(offset2UpCyl)
-    offset2DnCart = cylToCart(offset2DnCyl)
+        midCurve2Cyl[v][:,0]= np.linspace(midCurve[0,0], midCurve[1,0], int(crossPassageRes))
+        midCurveMidCyl[v][:,0] = np.linspace(midCurve[1,0], midCurve[2,0], passageRes)
+        midCurve1Cyl[v][:,0] = np.linspace(midCurve[2,0], midCurve[3,0], int(crossPassageRes))
 
-    for v in range(newNsection):
-        offset1UpCart[v] = matchArcLengthFractions(blade1UpCart[v], offset1UpCart[v])
-        offset1DnCart[v] = matchArcLengthFractions(blade1DnCart[v], offset1DnCart[v])
-        offset2UpCart[v] = matchArcLengthFractions(blade2UpCart[v], offset2UpCart[v])
-        offset2DnCart[v] = matchArcLengthFractions(blade2DnCart[v], offset2DnCart[v])
-
-    offset1UpCyl = CartToCyl(offset1UpCart)
-    offset1DnCyl = CartToCyl(offset1DnCart)
-    offset2UpCyl = CartToCyl(offset2UpCart)
-    offset2DnCyl = CartToCyl(offset2DnCart)
-    """
     return blade1UpCyl, blade1DnCyl, blade2UpCyl, blade2DnCyl, offset1UpCyl, offset1DnCyl, offset2UpCyl, offset2DnCyl, midCurveMidCyl, midCurve1Cyl, midCurve2Cyl
 
 
@@ -1826,7 +1792,7 @@ def matchArcLengthFractions2(distToMatch, curveToModify):
     return modifiedCurve
 
 
-def fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, passageRes):
+def fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, crosspassageUpCyl, crosspassageDnCyl, midCurveCyl, passageRes):
     """
     Uses offset and extension data to create arrays with interior nodes for
     the inlet, outlet, and central sections of the hub and casing
@@ -1881,22 +1847,105 @@ def fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtC
     # outletHubPtsCyl
     # blade1UpExtCyl[0, :, :], offset1UpCyl[0, 1:, :], offset1DnCyl[0, 1:, :], blade1DnExtCyl[0, 1:, :]
     # blade2UpExtCyl[0, :, :], offset2UpCyl[0, 1:, :], offset2DnCyl[0, 1:, :], blade2DnExtCyl[0, 1:, :]
-    hub1 = np.concatenate((blade1UpExtCyl[0, :, :], offset1UpCyl[0, 1:, :], offset1DnCyl[0, 1:, :], blade1DnExtCyl[0, 1:, :]), axis=0)
-    hub2 = np.concatenate((blade2UpExtCyl[0, :, :], offset2UpCyl[0, 1:, :], offset2DnCyl[0, 1:, :], blade2DnExtCyl[0, 1:, :]), axis=0)
-    hubPtsCylNodes = tf.transfinite3D(inletHubPtsCyl, outletHubPtsCyl, hub1, hub2)
-    hubPtsCyl = hubPtsCylNodes.reshape(passageRes, int(hubPtsCylNodes.shape[0]/passageRes), 3)
-    hubPtsCyl = np.swapaxes(hubPtsCyl, 0, 1)
+    #
+    # But: need to break this into 4 parts: upstream extension, between
+    # cross-passage curves (up and downstream parts), and downstream 
+    # extension, THEN combine.
+    crosspassageUpHubPtsCyl = crosspassageUpCyl[ 0, :, :]
+    crosspassageUpCasPtsCyl = crosspassageUpCyl[-1, :, :]
 
+    midCurveHubPtsCyl = midCurveCyl[ 0, :, :]
+    midCurveCasPtsCyl = midCurveCyl[-1, :, :]
+
+    crosspassageDnHubPtsCyl = crosspassageDnCyl[ 0, :, :]
+    crosspassageDnCasPtsCyl = crosspassageDnCyl[-1, :, :]
+
+    hubA1 = blade1UpExtCyl[0, :, :]
+    hubA2 = blade2UpExtCyl[0, :, :]
+    hubAPtsCylNodes = tf.transfinite3D(inletHubPtsCyl, crosspassageUpHubPtsCyl, hubA1, hubA2)
+    hubAPtsCyl = hubAPtsCylNodes.reshape(passageRes, int(hubAPtsCylNodes.shape[0]/passageRes), 3)
+    hubAPtsCyl = np.swapaxes(hubAPtsCyl, 0, 1)
+
+    hubB1 = offset1UpCyl[0, :, :]
+    hubB2 = offset2UpCyl[0, :, :]
+    hubBPtsCylNodes = tf.transfinite3D(crosspassageUpHubPtsCyl, midCurveHubPtsCyl, hubB1, hubB2)
+    hubBPtsCyl = hubBPtsCylNodes.reshape(passageRes, int(hubBPtsCylNodes.shape[0]/passageRes), 3)
+    hubBPtsCyl = np.swapaxes(hubBPtsCyl, 0, 1)
+
+    hubC1 = offset1DnCyl[0, :, :]
+    hubC2 = offset2DnCyl[0, :, :]
+    hubCPtsCylNodes = tf.transfinite3D(midCurveHubPtsCyl, crosspassageDnHubPtsCyl, hubC1, hubC2)
+    hubCPtsCyl = hubCPtsCylNodes.reshape(passageRes, int(hubCPtsCylNodes.shape[0]/passageRes), 3)
+    hubCPtsCyl = np.swapaxes(hubCPtsCyl, 0, 1)
+
+    hubD1 = blade1DnExtCyl[0, :, :]
+    hubD2 = blade2DnExtCyl[0, :, :]
+    hubDPtsCylNodes = tf.transfinite3D(crosspassageDnHubPtsCyl, outletHubPtsCyl, hubD1, hubD2)
+    hubDPtsCyl = hubDPtsCylNodes.reshape(passageRes, int(hubDPtsCylNodes.shape[0]/passageRes), 3)
+    hubDPtsCyl = np.swapaxes(hubDPtsCyl, 0, 1)
+
+    hubPtsCyl = np.vstack((hubAPtsCyl, hubBPtsCyl[1:, :], hubCPtsCyl[1:, :], hubDPtsCyl[1:, :]))
+
+    plt.plot(hubB1[:,0]*hubB1[:,1],hubB1[:,2],'-r')
+    plt.plot(hubB2[:,0]*hubB2[:,1],hubB2[:,2],'-m')
+    plt.plot(crosspassageUpHubPtsCyl[:,0]*crosspassageUpHubPtsCyl[:,1],crosspassageUpHubPtsCyl[:,2],'-b')
+    plt.plot(midCurveHubPtsCyl[:,0]*midCurveHubPtsCyl[:,1],midCurveHubPtsCyl[:,2],'-k')
+    plt.axis('equal')
+    plt.show()
+
+    plt.plot(hubPtsCyl[:, :, 0]*hubPtsCyl[:, :, 1], hubPtsCyl[:, :, 2],'r.')
+    plt.axis('equal')
+    plt.show()
+    
     # Central cas is bounded by:
     # inletCasbPtsCyl
     # outletCasPtsCyl
     # blade1UpExtCyl[-1, :, :], offset1UpCyl[-1, 1:, :], offset1DnCyl[-1, 1:, :], blade1DnExtCyl[-1, 1:, :]
     # blade2UpExtCyl[-1, :, :], offset2UpCyl[-1, 1:, :], offset2DnCyl[-1, 1:, :], blade2DnExtCyl[-1, 1:, :]
-    cas1 = np.concatenate((blade1UpExtCyl[-1, :, :], offset1UpCyl[-1, 1:, :], offset1DnCyl[-1, 1:, :], blade1DnExtCyl[-1, 1:, :]), axis=0)
-    cas2 = np.concatenate((blade2UpExtCyl[-1, :, :], offset2UpCyl[-1, 1:, :], offset2DnCyl[-1, 1:, :], blade2DnExtCyl[-1, 1:, :]), axis=0)
-    casPtsCylNodes = tf.transfinite3D(inletCasPtsCyl, outletCasPtsCyl, cas1, cas2)
-    casPtsCyl = casPtsCylNodes.reshape(passageRes, int(casPtsCylNodes.shape[0]/passageRes), 3)
-    casPtsCyl = np.swapaxes(casPtsCyl, 0, 1)
+    #
+    # But: need to break this into 4 parts: upstream extension, between
+    # cross-passage curves (up and downstream parts), and downstream 
+    # extension, THEN combine.
+    casA1 = blade1UpExtCyl[-1, :, :]
+    casA2 = blade2UpExtCyl[-1, :, :]
+    casAPtsCylNodes = tf.transfinite3D(inletCasPtsCyl, crosspassageUpCasPtsCyl, casA1, casA2)
+    casAPtsCyl = casAPtsCylNodes.reshape(passageRes, int(casAPtsCylNodes.shape[0]/passageRes), 3)
+    casAPtsCyl = np.swapaxes(casAPtsCyl, 0, 1)
+
+    casB1 = offset1UpCyl[-1, :, :]
+    casB2 = offset2UpCyl[-1, :, :]
+    casBPtsCylNodes = tf.transfinite3D(crosspassageUpCasPtsCyl, midCurveCasPtsCyl, casB1, casB2)
+    casBPtsCyl = casBPtsCylNodes.reshape(passageRes, int(casBPtsCylNodes.shape[0]/passageRes), 3)
+    casBPtsCyl = np.swapaxes(casBPtsCyl, 0, 1)
+
+    casC1 = offset1DnCyl[-1, :, :]
+    casC2 = offset2DnCyl[-1, :, :]
+    casCPtsCylNodes = tf.transfinite3D(midCurveCasPtsCyl, crosspassageDnCasPtsCyl, casC1, casC2)
+    casCPtsCyl = casCPtsCylNodes.reshape(passageRes, int(casCPtsCylNodes.shape[0]/passageRes), 3)
+    casCPtsCyl = np.swapaxes(casCPtsCyl, 0, 1)
+
+    casD1 = blade1DnExtCyl[-1, :, :]
+    casD2 = blade2DnExtCyl[-1, :, :]
+    casDPtsCylNodes = tf.transfinite3D(crosspassageDnCasPtsCyl, outletCasPtsCyl, casD1, casD2)
+    casDPtsCyl = casDPtsCylNodes.reshape(passageRes, int(casDPtsCylNodes.shape[0]/passageRes), 3)
+    casDPtsCyl = np.swapaxes(casDPtsCyl, 0, 1)
+
+    casPtsCyl = np.vstack((casAPtsCyl, casBPtsCyl[1:, :], casCPtsCyl[1:, :], casDPtsCyl[1:, :]))
+
+    plt.plot(casB1[:,0]*casB1[:,1],casB1[:,2],'-r')
+    plt.plot(casB2[:,0]*casB2[:,1],casB2[:,2],'-m')
+    plt.plot(crosspassageUpCasPtsCyl[:,0]*crosspassageUpCasPtsCyl[:,1],crosspassageUpCasPtsCyl[:,2],'-b')
+    plt.plot(midCurveCasPtsCyl[:,0]*midCurveCasPtsCyl[:,1],midCurveCasPtsCyl[:,2],'-k')
+    plt.axis('equal')
+    plt.show()
+
+    plt.plot(casPtsCyl[:, :, 0]*casPtsCyl[:, :, 1], casPtsCyl[:, :, 2],'r.')
+    plt.axis('equal')
+    plt.show()
+
+    # JD: UP TO HERE
+    # This function is failing on the transfinite interpolations.
+    bob = alice
 
     return inletPtsCyl, outletPtsCyl, hubPtsCyl, casPtsCyl
 
@@ -3755,7 +3804,7 @@ def main() -> int:
         blade2toOffsetDnCyl[:,  0, :] = blade2DnCyl[:, -1, :]
 
         # Define interior nodes for inlet, outlet, hub, casing
-        inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, passageRes)
+        inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, crossPassageUpCyl, crossPassageDnCyl, midCurveMidCyl, passageRes)
         blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
                                                                  midCurve1Cyl,
                                                                  blade1UpCyl,
@@ -3772,14 +3821,6 @@ def main() -> int:
                                                                  blade2toOffsetDnCyl,
                                                                  offset2DnCyl,
                                                                  blade2DnCyl)
-
-        # JD: UP TO HERE - plot to check if problem fixed
-        #plt.plot(blade1DnHubPtsCyl[:, :, 0]*blade1DnHubPtsCyl[:, :, 1], blade1DnHubPtsCyl[:, :, 2], 'ro')
-        #plt.plot(blade1DnCyl[0, :, 0]*blade1DnCyl[0, :, 1], blade1DnCyl[0, :, 2], 'b-')
-        #plt.axis('equal')
-        #plt.show()
-
-        #bob = alice
                                                                  
         # Convert everything back to Cartesian coordinates
         blade1UpCart = cylToCart(blade1UpCyl)
@@ -3856,8 +3897,6 @@ def main() -> int:
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
         calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap)
-
-        #bob = alice
         
     return 0
 
