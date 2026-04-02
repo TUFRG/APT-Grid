@@ -1136,10 +1136,10 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         # the flipud is because the curve is constructed from low theta to high theta, but later
         # code expects it to go the other way.
         LECurve = quadratic_bezier_curve(p0=offsetBlade1LEpt, p1=crossPassageLEp1, p2=offsetBlade2LEpt)
-        LECurveRot[m] = densifyCurve(LECurve, passageRes)
+        LECurveRot[m] = np.flip(densifyCurve(LECurve, passageRes), axis=0)
        
         TECurve = quadratic_bezier_curve(p0=offsetBlade1TEpt, p1=crossPassageTEp1, p2=offsetBlade2TEpt)
-        TECurveRot[m] = densifyCurve(TECurve, passageRes)
+        TECurveRot[m] = np.flip(densifyCurve(TECurve, passageRes), axis=0)
     
         # Old Adekola comment: Please note at this point that the part of the code profile that lies in the domain is the SS for blade 1 and PS for blade2.
         i = m  # this was a separate loop from here down with different indexing, so to avoid changing all the code for now I just set i=m
@@ -1530,6 +1530,23 @@ def mptToCyl(arrmpt, upstreamMprime, blade1PMprime, downstreamMprime, hub, cas):
     return arrCyl
 
 
+# JD: UP TO HERE
+# There might be something wrong witht this function
+# Actually from a quick look the function itself might be OK
+# but the way I'm using it may be complete nonsense!
+#
+#        blade1toOffsetUpCyl = bladeToOffset(pt1=blade1UpExtCyl[:, -2, :],
+#                                            pt2=blade1UpExtCyl[:, -1, :],
+#                                            res=bladeToOffsetRes,
+#                                            hub=hub,
+#                                            cas=cas)
+#
+# Why in the world am I using two points on the extension
+# as the pt1 and pt2? This makes no sense. This is supposed
+# to go from the blade to the offset.
+# I have taken the first 2 points on the extension adjacent to
+# blade. I'm amazed this works at all!
+# The pt2 should be the offset end instead!
 def bladeToOffset(pt1, pt2, res, hub, cas):
     """
     Create a new curve via interpolation between two points
@@ -1682,12 +1699,12 @@ def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVe
         # these arrays hold the surface points for the 3 sections of the midChord surface:
         # 2   goes from blade2 to offset2 (increasing theta)
         # Mid goes from offset2 to offset1 (increasing theta)
-        # 1   goes from offset1 to blade1 (incresaing theta)
+        # 1   goes from offset1 to blade1 (increasing theta)
         midCurve2Cyl[v][:,2] = np.linspace(midCurve[0,2], midCurve[1,2], int(crossPassageRes))
         midCurveMidCyl[v][:,2] = np.linspace(midCurve[1,2], midCurve[2,2], passageRes)
         midCurve1Cyl[v][:,2] = np.linspace(midCurve[2,2], midCurve[3,2], int(crossPassageRes))
 
-        midCurve2Cyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[0,1],int(crossPassageRes))
+        midCurve2Cyl[v][:,1] = np.linspace(midCurve[0,1], midCurve[1,1],int(crossPassageRes))
         midCurveMidCyl[v][:,1] = np.linspace(midCurve[1,1], midCurve[2,1], passageRes)
         midCurve1Cyl[v][:,1] = np.linspace(midCurve[2,1], midCurve[3,1], int(crossPassageRes))
 
@@ -1886,17 +1903,6 @@ def fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtC
 
     hubPtsCyl = np.vstack((hubAPtsCyl, hubBPtsCyl[1:, :], hubCPtsCyl[1:, :], hubDPtsCyl[1:, :]))
 
-    plt.plot(hubB1[:,0]*hubB1[:,1],hubB1[:,2],'-r')
-    plt.plot(hubB2[:,0]*hubB2[:,1],hubB2[:,2],'-m')
-    plt.plot(crosspassageUpHubPtsCyl[:,0]*crosspassageUpHubPtsCyl[:,1],crosspassageUpHubPtsCyl[:,2],'-b')
-    plt.plot(midCurveHubPtsCyl[:,0]*midCurveHubPtsCyl[:,1],midCurveHubPtsCyl[:,2],'-k')
-    plt.axis('equal')
-    plt.show()
-
-    plt.plot(hubPtsCyl[:, :, 0]*hubPtsCyl[:, :, 1], hubPtsCyl[:, :, 2],'r.')
-    plt.axis('equal')
-    plt.show()
-    
     # Central cas is bounded by:
     # inletCasbPtsCyl
     # outletCasPtsCyl
@@ -1931,21 +1937,6 @@ def fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtC
     casDPtsCyl = np.swapaxes(casDPtsCyl, 0, 1)
 
     casPtsCyl = np.vstack((casAPtsCyl, casBPtsCyl[1:, :], casCPtsCyl[1:, :], casDPtsCyl[1:, :]))
-
-    plt.plot(casB1[:,0]*casB1[:,1],casB1[:,2],'-r')
-    plt.plot(casB2[:,0]*casB2[:,1],casB2[:,2],'-m')
-    plt.plot(crosspassageUpCasPtsCyl[:,0]*crosspassageUpCasPtsCyl[:,1],crosspassageUpCasPtsCyl[:,2],'-b')
-    plt.plot(midCurveCasPtsCyl[:,0]*midCurveCasPtsCyl[:,1],midCurveCasPtsCyl[:,2],'-k')
-    plt.axis('equal')
-    plt.show()
-
-    plt.plot(casPtsCyl[:, :, 0]*casPtsCyl[:, :, 1], casPtsCyl[:, :, 2],'r.')
-    plt.axis('equal')
-    plt.show()
-
-    # JD: UP TO HERE
-    # This function is failing on the transfinite interpolations.
-    bob = alice
 
     return inletPtsCyl, outletPtsCyl, hubPtsCyl, casPtsCyl
 
@@ -3794,6 +3785,8 @@ def main() -> int:
                                                                  mid2N,
                                                                  bladeToOffsetRes,
                                                                  passageRes)
+
+        bob = alice
 
         # Correct the blade-to-offset surfaces to guarantee their boundary uses
         # exactly the points from the curves they touch -- specifically at
