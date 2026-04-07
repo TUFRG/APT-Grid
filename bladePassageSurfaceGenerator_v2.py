@@ -1530,28 +1530,11 @@ def mptToCyl(arrmpt, upstreamMprime, blade1PMprime, downstreamMprime, hub, cas):
     return arrCyl
 
 
-# JD: UP TO HERE
-# There might be something wrong witht this function
-# Actually from a quick look the function itself might be OK
-# but the way I'm using it may be complete nonsense!
-#
-#        blade1toOffsetUpCyl = bladeToOffset(pt1=blade1UpExtCyl[:, -2, :],
-#                                            pt2=blade1UpExtCyl[:, -1, :],
-#                                            res=bladeToOffsetRes,
-#                                            hub=hub,
-#                                            cas=cas)
-#
-# Why in the world am I using two points on the extension
-# as the pt1 and pt2? This makes no sense. This is supposed
-# to go from the blade to the offset.
-# I have taken the first 2 points on the extension adjacent to
-# blade. I'm amazed this works at all!
-# The pt2 should be the offset end instead!
 def bladeToOffset(pt1, pt2, res, hub, cas):
     """
     Create a new curve via interpolation between two points
     (with 'res' points total)
-    Z coordinate of pt2 must be < Z coordinate of pt1
+    Z coordinate of pt2 must be > Z coordinate of pt1
     pt1 and pt2 are assumed to have nNewSections sets of points
     hub and cas are bounding curves where linear interpolation
     can't be used at the bounding ends.
@@ -1570,11 +1553,14 @@ def bladeToOffset(pt1, pt2, res, hub, cas):
         # linear in the meridional plane. Note the theta values from the
         # linear interpolation should be OK.
         if p == 0:  # hub
+            print('special treatment for hub...')
             funcR = CubicSpline(hub[:, 1], hub[:, 0])
             curve[p][:, 1] = funcR(z)
         elif p == newNsection-1:  # casing
+            print('special treatment for casing...')
             funcR = CubicSpline(cas[:, 1], cas[:, 0])
             curve[p][:, 1] = funcR(z)
+
     return curve
 
 
@@ -1965,16 +1951,6 @@ def fillBladeToOffset(crossPassageUpCyl, crossPassageDnCyl, lowThetaCyl, highThe
     casPtsCyl = casPtsCylNodes.reshape(crossPassagePts, alongPassagePts, 3)
     casPtsCyl = np.swapaxes(casPtsCyl, 0, 1)
 
-    """
-    for i in range(hubPtsCyl.shape[0]):
-        plt.plot(hubPtsCyl[i, :, 0]*hubPtsCyl[i, :, 1], hubPtsCyl[i, :, 2], 'r.-')
-    plt.plot(lowThetaCyl[0, :, 0]*lowThetaCyl[0, :, 1], lowThetaCyl[0, :, 2],'b')
-    plt.plot(highThetaCyl[0, :, 0]*highThetaCyl[0, :, 1], highThetaCyl[0, :, 2],'b')
-    plt.axis('equal')
-    plt.show()
-
-    bob = alice
-    """
     return hubPtsCyl, casPtsCyl
 
 
@@ -1994,6 +1970,42 @@ def combineArrays(*args):
         Zvalues.append(arrList[i][:, :, 2])
 
     return Xvalues, Yvalues, Zvalues
+
+
+def fixRadialCoords(funcR, arr):
+    """
+    Takes as input a list of interpolant objects for
+    radial coordiantes from axial coordinates, and
+    an array to operate on.
+    Outputs the same array with radial coordinates
+    replaced with those computed using the interpolant
+    """
+    arrMod = arr.copy()
+    # arr is assumed to be in cylindrical coordinates
+    # along its last dimension, (theta, r, z)
+    for i in range(len(funcR)):
+        # get new radial coordinates based on z coordinates
+        arrMod[i, :, 1] = funcR[i](arr[i, :, 2])
+
+    return arrMod
+
+
+def fixRadialCoords2(funcR, arr):
+    """
+    Takes as input an interpolant object for
+    radial coordiantes from axial coordinates, and
+    an array to operate on.
+    Outputs the same array with radial coordinates
+    replaced with those computed using the interpolant
+    """
+    arrMod = arr.copy()
+    # arr is assumed to be in cylindrical coordinates
+    # along its last dimension, (theta, r, z)
+
+    # get new radial coordinates based on z coordinates
+    arrMod[:, :, 1] = funcR(arr[:, :, 2])
+
+    return arrMod
 
 
 def cylToCart(arrCyl):
@@ -3714,15 +3726,18 @@ def main() -> int:
                                       percentVal, percentValNonCutLE, percentValNonCutTE)
 
         # Convert everything back to cylindrical coordinates (theta, R, Z)
+        blade1UpExtCyl = mptToCyl(blade1UpExtmpt,
+                                     upstreamMprime, blade1PMprime,
+                                     downstreamMprime, hub, cas)
         crossPassageUpCyl = mptToCyl(crossPassageUpmpt,
                                      upstreamMprime, blade1PMprime,
                                      downstreamMprime, hub, cas)
         crossPassageDnCyl = mptToCyl(crossPassageDnmpt,
                                      upstreamMprime, blade1PMprime,
                                      downstreamMprime, hub, cas)
-        blade1UpExtCyl = mptToCyl(blade1UpExtmpt,
-                                     upstreamMprime, blade1PMprime,
-                                     downstreamMprime, hub, cas)
+        #blade1UpExtCyl = mptToCyl2(blade1UpExtmpt,
+        #                             upstreamMprime, blade1PMprime,
+        #                             downstreamMprime, meridCurve)#hub, cas)
         blade1DnExtCyl = mptToCyl(blade1DnExtmpt,
                                      upstreamMprime, blade1PMprime,
                                      downstreamMprime, hub, cas)
@@ -3786,8 +3801,6 @@ def main() -> int:
                                                                  bladeToOffsetRes,
                                                                  passageRes)
 
-        bob = alice
-
         # Correct the blade-to-offset surfaces to guarantee their boundary uses
         # exactly the points from the curves they touch -- specifically at
         # the blade
@@ -3814,7 +3827,45 @@ def main() -> int:
                                                                  blade2toOffsetDnCyl,
                                                                  offset2DnCyl,
                                                                  blade2DnCyl)
-                                                                 
+
+        # Enforce all data at each section to lie on the meridCurve for that section
+        funcR = [CubicSpline(x_set, y_set) for x_set, y_set in zip(meridCurve[:, :, 1], meridCurve[:, :, 0])]
+
+        blade1UpCyl = fixRadialCoords(funcR, blade1UpCyl)
+        offset1UpCyl = fixRadialCoords(funcR, offset1UpCyl)
+        blade2UpCyl = fixRadialCoords(funcR, blade2UpCyl)
+        offset2UpCyl = fixRadialCoords(funcR, offset2UpCyl)
+        blade1DnCyl = fixRadialCoords(funcR, blade1DnCyl)
+        offset1DnCyl = fixRadialCoords(funcR, offset1DnCyl)
+        blade2DnCyl = fixRadialCoords(funcR, blade2DnCyl)
+        offset2DnCyl = fixRadialCoords(funcR, offset2DnCyl)
+        crossPassageUpCyl = fixRadialCoords(funcR, crossPassageUpCyl)
+        crossPassageDnCyl = fixRadialCoords(funcR, crossPassageDnCyl)
+        midCurveMidCyl = fixRadialCoords(funcR, midCurveMidCyl)
+        blade1UpExtCyl = fixRadialCoords(funcR, blade1UpExtCyl)
+        blade2UpExtCyl = fixRadialCoords(funcR, blade2UpExtCyl)
+        blade1DnExtCyl = fixRadialCoords(funcR, blade1DnExtCyl)
+        blade2DnExtCyl = fixRadialCoords(funcR, blade2DnExtCyl)
+        blade1toOffsetUpCyl = fixRadialCoords(funcR, blade1toOffsetUpCyl)
+        blade2toOffsetUpCyl = fixRadialCoords(funcR, blade2toOffsetUpCyl)
+        blade1toOffsetDnCyl = fixRadialCoords(funcR, blade1toOffsetDnCyl)
+        blade2toOffsetDnCyl = fixRadialCoords(funcR, blade2toOffsetDnCyl)
+        midCurve1Cyl = fixRadialCoords(funcR, midCurve1Cyl)
+        midCurve2Cyl = fixRadialCoords(funcR, midCurve2Cyl)
+        inletPtsCyl = fixRadialCoords(funcR, inletPtsCyl)
+        outletPtsCyl = fixRadialCoords(funcR, outletPtsCyl)
+
+        hubPtsCyl = fixRadialCoords2(funcR[0], hubPtsCyl)
+        casPtsCyl = fixRadialCoords2(funcR[-1], casPtsCyl)
+        blade1UpHubPtsCyl = fixRadialCoords2(funcR[0], blade1UpHubPtsCyl)
+        blade1DnHubPtsCyl = fixRadialCoords2(funcR[0], blade1DnHubPtsCyl)
+        blade1UpCasPtsCyl = fixRadialCoords2(funcR[-1], blade1UpCasPtsCyl)
+        blade1DnCasPtsCyl = fixRadialCoords2(funcR[-1], blade1DnCasPtsCyl)
+        blade2UpHubPtsCyl = fixRadialCoords2(funcR[0], blade2UpHubPtsCyl)
+        blade2DnHubPtsCyl = fixRadialCoords2(funcR[0], blade2DnHubPtsCyl)
+        blade2UpCasPtsCyl = fixRadialCoords2(funcR[-1], blade2UpCasPtsCyl)
+        blade2DnCasPtsCyl = fixRadialCoords2(funcR[-1], blade2DnCasPtsCyl)
+
         # Convert everything back to Cartesian coordinates
         blade1UpCart = cylToCart(blade1UpCyl)
         offset1UpCart = cylToCart(offset1UpCyl)
