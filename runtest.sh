@@ -4,8 +4,8 @@ set -e
 
 clear
 rm -rf VTK
-cp ~/Documents/Work/UWindsor/Research/OpenFOAMturbomachinery/structuredMeshWithProjection/TUFRG/surfaceGenerator/ECL5_original/periodic/passageParameters system/
-cp ~/Documents/Work/UWindsor/Research/OpenFOAMturbomachinery/structuredMeshWithProjection/TUFRG/surfaceGenerator/ECL5_original/periodic../constant/geometry1/*.stl constant/geometry/
+mv outputData/passage0/*.stl constant/geometry/
+mv outputData/passage0/passageParameters system/
 ./geomUpdate.sh
 blockMesh
 checkMesh
