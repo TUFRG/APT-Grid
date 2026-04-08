@@ -99,9 +99,11 @@ def densify_curve_simple(points, n_points_new):
     points = np.atleast_2d(points)
     if points.shape[0] == 1:
         points = points.T   
+    #pointsOrig = points
     current_points = points.copy()
     n_to_add = n_points_new - len(points)
-    for _ in range(n_to_add):
+    #midpointCollection = np.zeros((n_to_add, 2))
+    for i in range(n_to_add):
         # Calculate distances between consecutive points
         diffs = np.diff(current_points, axis=0)
         distances = np.linalg.norm(diffs, axis=1)
@@ -109,9 +111,9 @@ def densify_curve_simple(points, n_points_new):
         max_gap_idx = np.argmax(distances)
         # Insert a point at the midpoint of the largest gap
         midpoint = (current_points[max_gap_idx] + current_points[max_gap_idx + 1]) / 2
+        #midpointCollection[i] = midpoint
         # Insert the midpoint
         current_points = np.insert(current_points, max_gap_idx + 1, midpoint, axis=0)
-    
     return current_points
 
 def pol2cart(theta, r, Z):
