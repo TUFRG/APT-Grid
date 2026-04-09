@@ -23,5 +23,5 @@ The runtest script copies over files, updates blockMeshDict, generates the mesh,
 Open issues:
 
 1. Cutting at 2%/0% to clean up offset curve fraction maps is arbitrary, would be better to automate this. This seems to be a balancing act between non-orthogonal faces and cell size variation near the LE/TE.
-2. Currently fails on cases where the extreme blade sections are fully within the annulus, i.e. they don't touch the hub or casing.
+2. Meridional curve creation does not always respect LE/TE points -- needs fixing.
 3. No testing yet conducted on actual aperiodic blade rows.
