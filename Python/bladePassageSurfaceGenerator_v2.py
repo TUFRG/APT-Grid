@@ -54,6 +54,7 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
     N = int(profile1.shape[0]/2)
     Nr = int(2*N)
     M = profile1.shape[0]
+    
     #profile12D = np.zeros([numOldProfiles,N*2,2])
     #profile22D = np.zeros([numOldProfiles,N*2,2])
     profile12D = np.zeros([numOldProfiles,M,2])
@@ -233,6 +234,14 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
     while hubIdx < numOldProfiles and not hubIntersect: #
         profile1Surface = np.column_stack((profile1[:,hubIdx,2], profile1[:,hubIdx,1]))
         if not mf.TwoLinesIntersect(hubBladeRegion, profile1Surface): 
+            #This is a little ambiguos, even if there are no intersection, the profile might lie outside. Needs additional checks
+            #Use the radius to check if the profile lies inside or outside. At the LE is enough
+            profileRadius = LE2D[hubIdx][1]
+            hubRadius = hubBladeRegion[1][1]
+            if profileRadius > hubRadius:
+                hubIntersect = True
+            else:
+                hubIdx += 1
             hubIntersect = True
         else:
             hubIdx += 1
@@ -245,10 +254,18 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
     while casIdx-2 < numOldProfiles and not casIntersect: #The reson for subtracting 2 here is because I added extensions at both ends
         profile1Surface = np.column_stack((profile1[:,casIdx-2,2], profile1[:,casIdx-2,1]))
         if not mf.TwoLinesIntersect(casBladeRegion, profile1Surface):
-            casIntersect = True
+            #This is a little ambiguos, even if there are no intersection, the profile might lie outside. Needs additional checks
+            #Use the radius to check if the profile lies inside or outside. At the LE is enough
+            profileRadius = LE2D[casIdx-2][1]
+            casingRadius = casBladeRegion[1][1]
+            if profileRadius < casingRadius:
+                casIntersect = True
+            else:
+                casIdx -= 1
         else:
             casIdx -= 1
         print(casIntersect)
+        # print(profile1Surface.shape)
     if casIntersect:
         casSpanFrac = mf.compute_span_fractions(profile12D[numOldProfiles-1,:,:], extnLE2D[casIdx], extnTE2D[casIdx])
         newCasBladeRegion = mf.rearrange_curve_by_arc_length(casRegionPts, casSpanFrac)
@@ -261,6 +278,12 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
     while hubIdx2 < numOldProfiles and not hubIntersect2: #
         profile2Surface = np.column_stack((profile2[:,hubIdx2,2], profile2[:,hubIdx2,1])) # 
         if not mf.TwoLinesIntersect(hubBladeRegion2, profile2Surface):
+            profileRadius2 = LE2D2[hubIdx2][1]
+            hubRadius2 = hubBladeRegion2[1][1]
+            if profileRadius2 > hubRadius2:
+                hubIntersect2 = True
+            else:
+                hubIdx2 += 1
             hubIntersect2 = True
         else:
             hubIdx2 += 1
@@ -275,6 +298,12 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
     while casIdx2-2 < numOldProfiles and not casIntersect2:
         profile2Surface = np.column_stack((profile2[:,casIdx2-2,2], profile2[:,casIdx2-2,1]))
         if not mf.TwoLinesIntersect(casBladeRegion2, profile2Surface):
+            profileRadius = LE2D2[casIdx2-2][1]
+            casingRadius = casBladeRegion2[1][1]
+            if profileRadius < casingRadius:
+                casIntersect2 = True
+            else:
+                casIdx2 -= 1
             casIntersect2 = True
         else:
             casIdx2 -= 1
@@ -325,7 +354,7 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
         # but the casing is not touching. By definition my hubIdx is 3 (not 2 because of how i defined it) so 7 + 2 - 3 + 1 = 7 - 3 + 3.
     else:
         newNsection = numOldProfiles - hubIdx + (numOldProfiles - casIdx-2) + 4  #In this case the casing is touching so 
-
+    # print(casIdx)
     # I will compute 6 distances
     hubMidIdx = int(0.5*N)
     # Check the distance of the profile before the hub profile and the profile after the hub profile from original
@@ -338,7 +367,7 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
 
     distHubA = min(distHubALE, distHubATE, distHubAMid)  # The minimum distance is the closest 
     distHubB = min(distHubBLE, distHubBTE, distHubBMid)
-
+    # print(LE2D.shape)
     distCasALE = mf.dist2D(LE2D[casIdx-1,0], LE2D[casIdx-1,1], LE2D[casIdx-2,0], LE2D[casIdx-2,1])
     distCasATE = mf.dist2D(TE2D[casIdx-1,0], TE2D[casIdx-1,1], TE2D[casIdx-2,0], TE2D[casIdx-2,1])
     distCasAMid = mf.dist2D(profile1[hubMidIdx,casIdx-1,2], profile1[hubMidIdx,casIdx-1,1], profile1[hubMidIdx,casIdx-2,2], profile1[hubMidIdx,casIdx-2,1])
@@ -356,7 +385,7 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
         newNsection = newNsection - 1
     else:
         newNsection = newNsection
-        
+    print(newNsection)
     hub1 = np.insert(hub1, 0, hub1[-1], axis=0) #I need to guanrantee that this forms a close loop, initially this was ensured by splitting the curve.
     cas1 = np.insert(cas1, 0, cas1[-1], axis=0)
     # print(hub1[-1])
@@ -3515,11 +3544,11 @@ def main() -> int:
     """ INPUTS: """
     # By Jeff Defoe -- more general input code
     dataPath = '../inputData/'
-    hubFileName = 'sHub.curve'
-    casFileName = 'sCas.curve'
-    bladeCurveFile = 'statorBlade_originalECL5_fromAdekola.curve' # 'sBlade_fromAdekola.curve' # 'statorBlade1_original.curve'
+    hubFileName = 'IGVHub_reformatted.curve'
+    casFileName = 'IGVCasing_reformatted.curve'
+    bladeCurveFile = 'IGVBlade.curve'
     outputPath = '../outputData/'
-    Nb = 31  # number of blades in row
+    Nb = 20  # number of blades in row
     periodic = 1  # mode selection
     
     # Grid generation tuning parameters
@@ -3539,9 +3568,9 @@ def main() -> int:
     # optional BL definition parameters
     rhoref = 1.2  # base SI units (kg/m**3)
     Uref = 100.0  # base SI units (m/s)
-    LrefHub = 374.0  # input length units (cannot be calculated because it depends on components outside domain)
-    LrefCas = 374.0  # input length units (cannot be calculated because it depends on components outside domain)
-    LrefBla = 75.0  # input length units (JD: this should be calculated = mean chord)
+    LrefHub = 178.0  # input length units (cannot be calculated because it depends on components outside domain)
+    LrefCas = 178.0  # input length units (cannot be calculated because it depends on components outside domain)
+    LrefBla = 35.0  # input length units (JD: this should be calculated = mean chord)
     muref = 1.8e-5  # base SI units (kg/(m*s))
     yPlusHub = 5
     yPlusCas = 5
