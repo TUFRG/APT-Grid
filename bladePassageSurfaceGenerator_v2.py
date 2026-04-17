@@ -1786,6 +1786,7 @@ def changeNumPointsKeepDist(curve, N):
     # A new function that maintains the distribution of points
     # along a curve.
     # Maintain the frac arc length vs. frac points
+
     Norig = curve.shape[0]
     pointFracOrig = np.linspace(0, Norig, num=Norig, endpoint=True)/Norig
     pointFracNew = np.linspace(0, N, num=N, endpoint=True)/N
@@ -1793,18 +1794,20 @@ def changeNumPointsKeepDist(curve, N):
     # Currently assumes 3D data
     # note this only makes sense in consistent coordinates,
     # so input data and output data must both be in Cartesian
-    # ... maybe? Maybe not -- because of t-value based
-    # spline construction, it may not matter actually!
+    #
+    # But the input data is normally in cylindrical.
+    # So first convert to Cartesian:
+    curveCart = np.array(mf.pol2cart(curve[:, 0], curve[:, 1], curve[:, 2])).T
 
     # 1. Get t values (fractional arclength)
-    tck, u = splprep([curve[:, 0], curve[:, 1], curve[:, 2]], s=0)
+    tck, u = splprep([curveCart[:, 0], curveCart[:, 1], curveCart[:, 2]], s=0)
     
     # 2. Once the new arc length fractions are obtained,
     # to map them back to actual coordintes, use
     # cubic spline interpolation with the 'x' values using
     # being the 't' values and the 'y' values being
     # all 3 spatial coordinates
-    curveSplineObj = CubicSpline(u, curve, axis=0, bc_type='not-a-knot')
+    curveSplineObj = CubicSpline(u, curveCart, axis=0, bc_type='not-a-knot')
 
     # 3. Get new arclength fracitons by maintaining
     # the arc length fraction vs. fraction of points
@@ -1814,7 +1817,10 @@ def changeNumPointsKeepDist(curve, N):
 
     # 4. Finally, use the new arc length fractions to get
     # new coordinates from the spline object
-    return curveSplineObj(uNew)
+    newCurveCart = curveSplineObj(uNew)
+
+    # Finally convert back to Cylindrical:
+    return np.array(mf.cart2pol(newCurveCart[:, 0], newCurveCart[:, 1], newCurveCart[:, 2])).T
 
 
 def matchArcLengthFractions(curveToMatch, curveToModify):
@@ -3945,8 +3951,6 @@ def main() -> int:
         blade2DnHubPtsCyl = fixRadialCoords2(funcR[0], blade2DnHubPtsCyl)
         blade2UpCasPtsCyl = fixRadialCoords2(funcR[-1], blade2UpCasPtsCyl)
         blade2DnCasPtsCyl = fixRadialCoords2(funcR[-1], blade2DnCasPtsCyl)
-
-        bob = alice
 
         # Convert everything back to Cartesian coordinates
         blade1UpCart = cylToCart(blade1UpCyl)
