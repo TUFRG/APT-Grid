@@ -3,7 +3,7 @@ APeriodic Turbomachinery Grid Generator
 by Adekola Adeyemi, Justin Smart, Tony Woo, and Jeff Defoe
 2024-2026
 
-08 April 2026
+20 April 2026
 
 Makes OH structured meshes for turbomachinery blade passage CFD simulations.
 Has capability to generate conformal meshes for individual passages of aperiodic blade rows where each blade shape is different.
@@ -23,5 +23,4 @@ The runtest script copies over files, updates blockMeshDict, generates the mesh,
 Open issues:
 
 1. Cutting at 2%/0% to clean up offset curve fraction maps is arbitrary, would be better to automate this. This seems to be a balancing act between non-orthogonal faces and cell size variation near the LE/TE.
-2. Meridional curve creation does not always respect LE/TE points -- needs fixing.
-3. No testing yet conducted on actual aperiodic blade rows.
+2. No testing yet conducted on actual aperiodic blade rows.
