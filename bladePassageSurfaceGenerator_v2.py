@@ -3059,10 +3059,12 @@ def offsetCurve(x, y, d, smooth=True, s=0, periodic=True):
         y_offset = np.append(y_offset, y_offset[0])
     return x_offset, y_offset
 
+
 def cosineSpace( N, a=0.0, b=1.0):
     beta = np.linspace(0, np.pi, N)
     x = 0.5 * (a + b) + 0.5 * (b - a) * np.cos(beta)
     return np.flip(x)
+
 
 def arcLengthIndex(x, y, percent):
     x = np.asarray(x)
@@ -3077,6 +3079,7 @@ def arcLengthIndex(x, y, percent):
     indices = np.unique(indices)
     # indices = [np.argmin(np.abs(s - ts)) for ts in target_s]
     return s, indices
+
 
 def nonDimFracChooser(x, percent):
     x = np.asarray(x) 
@@ -3097,6 +3100,28 @@ def curveFrac(bladePt, offsetCurve, projectOffset, percent):
     lowHub1 = np.array([lowBFrac[lowIdx], lowOFrac[lowIdx]])
     return lowHub1
 
+
+def enforcePeriodic(surf1Cyl, surf2Cyl, Nb):
+    """
+    Takes in 2 surfaces in cylindrical coordinates
+    (theta, r, z) which are supposed to be periodic
+    with period 2*np.pi/Nb and modifies them to
+    be exactly periodic by defining each to be the
+    average of the two accounting for theta-offset.
+    surf1 has smaller theta coordinates than surf1.
+    """
+    dQ = 2.0*np.pi/Nb
+    surf1CylPer = surf1Cyl.copy()
+    surf1CylPer[:, :, 0] = 0.5*(surf1Cyl[:, :, 0] + (surf2Cyl[:, :, 0] - dQ))
+    surf1CylPer[:, :, 1] = 0.5*(surf1Cyl[:, :, 1] + surf2Cyl[:, :, 1])
+    surf1CylPer[:, :, 2] = 0.5*(surf1Cyl[:, :, 2] + surf2Cyl[:, :, 2])
+    surf2CylPer = surf2Cyl.copy()
+    surf2CylPer[:, :, 0] = 0.5*(surf2Cyl[:, :, 0] + (surf1Cyl[:, :, 0] + dQ))
+    surf2CylPer[:, :, 1] = 0.5*(surf1Cyl[:, :, 1] + surf2Cyl[:, :, 1])
+    surf2CylPer[:, :, 2] = 0.5*(surf1Cyl[:, :, 2] + surf2Cyl[:, :, 2])
+
+    return surf1CylPer, surf2CylPer
+    
 
 #%% Defining the STLs
 def createSTLs(Xvalues, Yvalues, Zvalues, filePath, passageNum):
@@ -3994,24 +4019,34 @@ def main() -> int:
         blade1toOffsetDnCyl[:,  0, :] = blade1DnCyl[:, -1, :]
         blade2toOffsetDnCyl[:,  0, :] = blade2DnCyl[:, -1, :]
 
-        # Define interior nodes for inlet, outlet, hub, casing
-        inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, crossPassageUpCyl, crossPassageDnCyl, midCurveMidCyl, passageRes)
-        blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
-                                                                 midCurve1Cyl,
-                                                                 blade1UpCyl,
-                                                                 offset1UpCyl)
-        blade1DnHubPtsCyl, blade1DnCasPtsCyl = fillBladeToOffset(midCurve1Cyl,
-                                                                 blade1toOffsetDnCyl,
-                                                                 blade1DnCyl,
-                                                                 offset1DnCyl)
-        blade2UpHubPtsCyl, blade2UpCasPtsCyl = fillBladeToOffset(blade2toOffsetUpCyl,
-                                                                 midCurve2Cyl,
-                                                                 offset2UpCyl,
-                                                                 blade2UpCyl)
-        blade2DnHubPtsCyl, blade2DnCasPtsCyl = fillBladeToOffset(midCurve2Cyl,
-                                                                 blade2toOffsetDnCyl,
-                                                                 offset2DnCyl,
-                                                                 blade2DnCyl)
+        # For periodic blade rows, do a final correction to
+        # enforce that the extensions are exactly periodic.
+        # Also ensure any changes are reflected in the blades,
+        # offsets, and cross-passage curves.
+        if periodic==1:
+            blade1UpExtCyl, blade2UpExtCyl = enforcePeriodic(blade1UpExtCyl,
+                                                             blade2UpExtCyl, Nb)
+            blade1DnExtCyl, blade2DnExtCyl = enforcePeriodic(blade1DnExtCyl,
+                                                             blade2DnExtCyl, Nb)
+            blade1toOffsetUpCyl, blade2toOffsetUpCyl = enforcePeriodic(blade1toOffsetUpCyl,
+                                                             blade2toOffsetUpCyl, Nb)
+            blade1toOffsetDnCyl, blade2toOffsetDnCyl = enforcePeriodic(blade1toOffsetDnCyl,
+                                                             blade2toOffsetDnCyl, Nb)
+
+            blade1UpCyl[:, 0, :] = blade1toOffsetUpCyl[:, -1, :]
+            blade2UpCyl[:, 0, :] = blade2toOffsetUpCyl[:, -1, :]
+            blade1DnCyl[:, -1, :] = blade1toOffsetDnCyl[:, 0, :]
+            blade2DnCyl[:, -1, :] = blade2toOffsetDnCyl[:, 0, :]
+
+            offset1UpCyl[:, 0, :] = blade1toOffsetUpCyl[:, 0, :]
+            offset2UpCyl[:, 0, :] = blade2toOffsetUpCyl[:, 0, :]
+            offset1DnCyl[:, -1, :] = blade1toOffsetDnCyl[:, -1, :]
+            offset2DnCyl[:, -1, :] = blade2toOffsetDnCyl[:, -1, :]
+
+            crossPassageUpCyl[:, 0, :] = blade1toOffsetUpCyl[:, 0, :]
+            crossPassageUpCyl[:, -1, :] = blade2toOffsetUpCyl[:, 0, :]
+            crossPassageDnCyl[:, 0, :] = blade1toOffsetDnCyl[:, -1, :]
+            crossPassageDnCyl[:, -1, :] = blade2toOffsetDnCyl[:, -1, :]
 
         # Enforce all data at each section to lie on the meridCurve for that section
         funcR = [CubicSpline(x_set, y_set) for x_set, y_set in zip(meridCurve[:, :, 1], meridCurve[:, :, 0])]
@@ -4037,9 +4072,29 @@ def main() -> int:
         blade2toOffsetDnCyl = fixRadialCoords(funcR, blade2toOffsetDnCyl)
         midCurve1Cyl = fixRadialCoords(funcR, midCurve1Cyl)
         midCurve2Cyl = fixRadialCoords(funcR, midCurve2Cyl)
+
+        # Define interior nodes for inlet, outlet, hub, casing
+        inletPtsCyl,outletPtsCyl, hubPtsCyl, casPtsCyl = fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtCyl, offset1UpCyl, offset2UpCyl, offset1DnCyl, offset2DnCyl, crossPassageUpCyl, crossPassageDnCyl, midCurveMidCyl, passageRes)
+        blade1UpHubPtsCyl, blade1UpCasPtsCyl = fillBladeToOffset(blade1toOffsetUpCyl,
+                                                                 midCurve1Cyl,
+                                                                 blade1UpCyl,
+                                                                 offset1UpCyl)
+        blade1DnHubPtsCyl, blade1DnCasPtsCyl = fillBladeToOffset(midCurve1Cyl,
+                                                                 blade1toOffsetDnCyl,
+                                                                 blade1DnCyl,
+                                                                 offset1DnCyl)
+        blade2UpHubPtsCyl, blade2UpCasPtsCyl = fillBladeToOffset(blade2toOffsetUpCyl,
+                                                                 midCurve2Cyl,
+                                                                 offset2UpCyl,
+                                                                 blade2UpCyl)
+        blade2DnHubPtsCyl, blade2DnCasPtsCyl = fillBladeToOffset(midCurve2Cyl,
+                                                                 blade2toOffsetDnCyl,
+                                                                 offset2DnCyl,
+                                                                 blade2DnCyl)
+
+        # Re-do radial enforcement after TF interpolations
         inletPtsCyl = fixRadialCoords(funcR, inletPtsCyl)
         outletPtsCyl = fixRadialCoords(funcR, outletPtsCyl)
-
         hubPtsCyl = fixRadialCoords2(funcR[0], hubPtsCyl)
         casPtsCyl = fixRadialCoords2(funcR[-1], casPtsCyl)
         blade1UpHubPtsCyl = fixRadialCoords2(funcR[0], blade1UpHubPtsCyl)
@@ -4126,8 +4181,6 @@ def main() -> int:
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
         calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap)
-
-    bob = alice
 
     return 0
 
