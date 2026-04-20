@@ -17,7 +17,7 @@ import sys
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d, CubicSpline, splprep
+from scipy.interpolate import interp1d, CubicSpline, splprep, splev
 from scipy.optimize import fsolve
 import model_function as mf
 import TransfiniteInterpolation as tf
@@ -1212,9 +1212,13 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         # code expects it to go the other way.
         LECurve = quadratic_bezier_curve(p0=offsetBlade1LEpt, p1=crossPassageLEp1, p2=offsetBlade2LEpt)
         LECurveRot[m] = np.flip(densifyCurve(LECurve, passageRes), axis=0)
+        # resample uniformy along arclength
+        LECurveRot[m] = resampleUniformly(LECurveRot[m])
        
         TECurve = quadratic_bezier_curve(p0=offsetBlade1TEpt, p1=crossPassageTEp1, p2=offsetBlade2TEpt)
         TECurveRot[m] = np.flip(densifyCurve(TECurve, passageRes), axis=0)
+        # resample uniformy along arclength
+        TECurveRot[m] = resampleUniformly(TECurveRot[m])
     
         # Old Adekola comment: Please note at this point that the part of the code profile that lies in the domain is the SS for blade 1 and PS for blade2.
         i = m  # this was a separate loop from here down with different indexing, so to avoid changing all the code for now I just set i=m
@@ -1265,8 +1269,8 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         midchordPS2[i] = ps2InterX
         midchordSS2[i] = ss2InterX   
 
-        blade1Func = CubicSpline(blade1nmpt[i][:,0], blade1nmpt[i][:,1]) # Interpolation function for high theta blade
-        blade2Func = CubicSpline(blade2pmpt[i][:,0], blade2pmpt[i][:,1]) # Interpolation function for low theta blade
+        #blade1Func = CubicSpline(blade1nmpt[i][:,0], blade1nmpt[i][:,1]) # Interpolation function for high theta blade
+        #blade2Func = CubicSpline(blade2pmpt[i][:,0], blade2pmpt[i][:,1]) # Interpolation function for low theta blade
         offset1Func = CubicSpline(offsetSplinedBlade12D[i][:,0], offsetSplinedBlade12D[i][:,1])
         offset2Func = CubicSpline(offsetSplinedBlade22D[i][:,0], offsetSplinedBlade22D[i][:,1])
 
@@ -1285,30 +1289,12 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
         # 6) get arclength mapping for hub and casing sections (for mesh generation)
         if i == 0:
             #H is high, L is low, 1 is upstream and 2 is downstream. I am trying to replace naming convention from here
-            mBladeH1 = cosineSpace(bladeRes+1, blade1nmpt[i][0,0], ssInterX[0]) #upstream portion of the high theta blade
-            mBladeH2 = cosineSpace(bladeRes+1, ssInterX[0], blade1nmpt[i][-1,0]) #downstream portion of the high theta blade
-            mBladeL1 = cosineSpace(bladeRes+1, blade2pmpt[i][0,0], ps2InterX[0]) #upstream portion of the low theta blade
-            mBladeL2 = cosineSpace(bladeRes+1, ps2InterX[0], blade2pmpt[i][-1,0]) #downstream portion of the low theta blade 
-            thBladeH1 = blade1Func(mBladeH1)
-            thBladeH2 = blade1Func(mBladeH2)
-            thBladeL1 = blade2Func(mBladeL1)
-            thBladeL2 = blade2Func(mBladeL2)
-            bladeH1Pt = np.column_stack((mBladeH1, thBladeH1))  #upstream portion of the high theta blade
-            bladeL1Pt = np.column_stack((mBladeL1, thBladeL1))  #downstream portion of the high theta blade
-            bladeH2Pt = np.column_stack((mBladeH2, thBladeH2))  #upstream portion of the low theta blade
-            bladeL2Pt = np.column_stack((mBladeL2, thBladeL2))  #downstream portion of the low theta blade    
-            mOffsetH1 = cosineSpace(bladeRes+1, curve1[0,0], ssInterX[0]) #upstream portion of the high theta blade
-            mOffsetH2 = cosineSpace(bladeRes+1, ssInterX[0], curve1[-1,0]) #downstream portion of the high theta blade
-            mOffsetL1 = cosineSpace(bladeRes+1, curve2[0,0], ps2InterX[0]) #upstream portion of the low theta blade
-            mOffsetL2 = cosineSpace(bladeRes+1, ps2InterX[0], curve2[-1,0]) #downstream portion of the low theta blade 
-            thOffsetH1 = offset1Func(mOffsetH1)
-            thOffsetH2 = offset1Func(mOffsetH2)
-            thOffsetL1 = offset2Func(mOffsetL1)
-            thOffsetL2 = offset2Func(mOffsetL2)        
-            offsetOrigH1Pt = np.column_stack((mOffsetH1, thOffsetH1)) #upstream portion of the high theta blade
-            offsetOrigL1Pt = np.column_stack((mOffsetL1, thOffsetL1))  #downstream portion of the high theta blade
-            offsetOrigH2Pt = np.column_stack((mOffsetH2, thOffsetH2)) #upstream portion of the low theta blade
-            offsetOrigL2Pt = np.column_stack((mOffsetL2, thOffsetL2))  #downstream portion of the low theta blade         
+            bladeH1Pt, bladeH2Pt = resampleCurveSections(blade1nmpt[i], ssInterX)
+            bladeL1Pt, bladeL2Pt = resampleCurveSections(blade2pmpt[i], ps2InterX)
+
+            offsetOrigH1Pt, offsetOrigH2Pt = resampleCurveSections(offsetSplinedBlade12D[i], ssInterX)
+            offsetOrigL1Pt, offsetOrigL2Pt = resampleCurveSections(offsetSplinedBlade22D[i], ps2InterX)
+
             lowHub1Slopes, lowHub1MidPt = slopeAndMidPtsLoop(bladeL1Pt) # Get the normal slope and the midPoint on the blade surface
             lowHub2Slopes, lowHub2MidPt = slopeAndMidPtsLoop(bladeL2Pt)
             highHub1Slopes, highHub1MidPt = slopeAndMidPtsLoop(bladeH1Pt)
@@ -1372,35 +1358,19 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
             highHub2 = cutArcLenMaps(highHub2, lower_bound=0.0, upper_bound=1.0-percentValNonCutTE)
            
         elif i == newNsection - 1:
-            mBladeH1 = cosineSpace(bladeRes+1, blade1nmpt[i][0,0], ssInterX[0]) #upstream portion of the high theta blade
-            mBladeH2 = cosineSpace(bladeRes+1, ssInterX[0], blade1nmpt[i][-1,0]) #downstream portion of the high theta blade
-            mBladeL1 = cosineSpace(bladeRes+1, blade2pmpt[i][0,0], ps2InterX[0]) #upstream portion of the low theta blade
-            mBladeL2 = cosineSpace(bladeRes+1, ps2InterX[0], blade2pmpt[i][-1,0]) #downstream portion of the low theta blade 
-            thBladeH1 = blade1Func(mBladeH1)
-            thBladeH2 = blade1Func(mBladeH2)
-            thBladeL1 = blade2Func(mBladeL1)
-            thBladeL2 = blade2Func(mBladeL2)        
-            bladeH1Pt = np.column_stack((mBladeH1, thBladeH1)) #upstream portion of the high theta blade
-            bladeL1Pt = np.column_stack((mBladeL1, thBladeL1))  #downstream portion of the high theta blade
-            bladeH2Pt = np.column_stack((mBladeH2, thBladeH2)) #upstream portion of the low theta blade
-            bladeL2Pt = np.column_stack((mBladeL2, thBladeL2))  #downstream portion of the low theta blade  
-            mOffsetH1 = cosineSpace(bladeRes+1, curve1[0,0], ssInterX[0]) #upstream portion of the high theta blade
-            mOffsetH2 = cosineSpace(bladeRes+1, ssInterX[0], curve1[-1,0]) #downstream portion of the high theta blade
-            mOffsetL1 = cosineSpace(bladeRes+1, curve2[0,0], ps2InterX[0]) #upstream portion of the low theta blade
-            mOffsetL2 = cosineSpace(bladeRes+1, ps2InterX[0], curve2[-1,0]) #downstream portion of the low theta blade 
-            thOffsetH1 = offset1Func(mOffsetH1)
-            thOffsetH2 = offset1Func(mOffsetH2)
-            thOffsetL1 = offset2Func(mOffsetL1)
-            thOffsetL2 = offset2Func(mOffsetL2)        
-            offsetOrigH1Pt = np.column_stack((mOffsetH1, thOffsetH1)) #upstream portion of the high theta blade
-            offsetOrigL1Pt = np.column_stack((mOffsetL1, thOffsetL1))  #downstream portion of the high theta blade
-            offsetOrigH2Pt = np.column_stack((mOffsetH2, thOffsetH2)) #upstream portion of the low theta blade
-            offsetOrigL2Pt = np.column_stack((mOffsetL2, thOffsetL2))  #downstream portion of the low theta blade    
-            
+            # bladeH1Pt, bladeH2Pt = cosineSampleCurveSections(blade1nmpt[i], ssInterX)
+            # bladeL1Pt, bladeL2Pt = cosineSampleCurveSections(blade2pmpt[i], ps2InterX)
+            bladeH1Pt, bladeH2Pt = resampleCurveSections(blade1nmpt[i], ssInterX)
+            bladeL1Pt, bladeL2Pt = resampleCurveSections(blade2pmpt[i], ps2InterX)
+
+            offsetOrigH1Pt, offsetOrigH2Pt = resampleCurveSections(offsetSplinedBlade12D[i], ssInterX)
+            offsetOrigL1Pt, offsetOrigL2Pt = resampleCurveSections(offsetSplinedBlade22D[i], ps2InterX)
+
             lowCas1Slopes, lowCas1MidPt = slopeAndMidPtsLoop(bladeL1Pt) # Get the normal slope and the midPoint on the blade surface
             lowCas2Slopes, lowCas2MidPt = slopeAndMidPtsLoop(bladeL2Pt)
             highCas1Slopes, highCas1MidPt = slopeAndMidPtsLoop(bladeH1Pt)
             highCas2Slopes, highCas2MidPt = slopeAndMidPtsLoop(bladeH2Pt)
+
             offsetL1Pt = pointAtDistLoop(lowCas1MidPt, lowCas1Slopes, np.full(bladeRes,1.5*dist1.max()), 'PS')[:-1] # This is offseting the point on the blade surface in the normal direction at some made up dist
             offsetL2Pt = pointAtDistLoop(lowCas2MidPt, lowCas2Slopes, np.full(bladeRes,1.5*dist1.max()), 'PS')[:-1]
             offsetH1Pt = pointAtDistLoop(highCas1MidPt, highCas1Slopes, np.full(bladeRes,1.5*dist1.max()), 'SS')[:-1]
@@ -1415,12 +1385,6 @@ def getCurvesAndMaps(offsetVertices2mpt, offsetVertices1mpt,
                 lineL1 = np.vstack((bladeL1Pt[ii+1], offsetL1Pt[ii]))  # high theta downsteam
                 lineH2 = np.vstack((bladeH2Pt[ii+1], offsetH2Pt[ii])) # low theta upstream
                 lineL2 = np.vstack((bladeL2Pt[ii+1], offsetL2Pt[ii])) #low theta downstream        
-                # JD: why do the front and back parts of the blade using the same "splined
-                # blade" array? Don't we already have front and back part blade arrays?
-                # I think this is PART of the problem, this is finding intersections that
-                # end up on the wrong half of the offset, which is a problem
-                # We get (0,0) return values when no intersection is found but we get intersections
-                # in places we ought not to because of the use of the full offset
                 highCas1OffsetPt[ii+1] = mf.TwoLinesIntersect(lineH1, offsetSplinedBlade12D[i]) # Get the points of intersection on the offset curve 
                 highCas2OffsetPt[ii+1] = mf.TwoLinesIntersect(lineH2, offsetSplinedBlade12D[i])
                 lowCas1OffsetPt[ii+1] = mf.TwoLinesIntersect(lineL1, offsetSplinedBlade22D[i])
@@ -1568,6 +1532,104 @@ def offsetResample(blade, offset, dist, side):
     return offset
 
 
+def resampleUniformly(curve):
+    """
+    Take in a curve made up of arbitrary points
+    And resample it with the same number of points
+    but with uniform sampling along its arclength
+    """
+    N = curve.shape[0]
+
+    # note this only makes sense in consistent coordinates,
+    # but this function is used where data is in m'-theta
+    # so that is fine.
+
+    # 1. Get t values (fractional arclength)
+    tck, u = splprep([curve[:, 0], curve[:, 1]], s=0)
+    
+    # 2. Once the new arc length fractions are obtained,
+    # to map them back to actual coordinates, use
+    # cubic spline interpolation with the 'x' values using
+    # being the 't' values and the 'y' values being
+    # the spatial coordinates
+    curveSplineObj = CubicSpline(u, curve, axis=0, bc_type='not-a-knot')
+
+    # 3. Get new arclength fractions by sampling
+    # uniformly
+    uNew = np.linspace(0, 1, num=N, endpoint=True)
+
+    # 4. Finally, use the new arc length fractions to get
+    # new coordinates from the spline object
+    uniformCurve = curveSplineObj(uNew)
+
+    return uniformCurve
+
+
+def resampleCurveSections(curve, splitPoint):
+    """
+    Take a curve profile in consistent 2D coordinates
+    (such as m'-theta) and a point along the curve
+    to split it (not necessarily one of the actual
+    curve points), and output two curves which are
+    resampled versions of each half of the curve with
+    one more point and with a cosine distribution of
+    points along the section of arclength each output
+    curve occupies
+    """
+    # number of points
+    N = curve.shape[0]
+    # get fractional arclength (u)
+    tck, u = splprep([curve[:, 0], curve[:, 1]], s=0)
+    # find the 'u' value where splitPoint is along curve
+    uSplineObj = CubicSpline(curve[:,0], u, axis=0, bc_type='not-a-knot')
+    uI = uSplineObj(splitPoint[0])
+    # get curve value at intersection point
+    mpI,thetaI = splev(uI, tck)
+    # find index of point just before this in original data
+    idxBeforeI = np.searchsorted(u, uI, side='left')
+    # make this new point an endpoint of two split curves
+    curve1 = np.concatenate((curve[0:idxBeforeI,:], np.array([[splitPoint[0], thetaI]])), axis=0)
+    curve2 = np.concatenate((np.array([[splitPoint[0], thetaI]]), curve[idxBeforeI:,:]), axis=0)
+    # resample each half
+    curve1Resample = changeNumPointsKeepDist2D(curve1, N+1)
+    curve2Resample = changeNumPointsKeepDist2D(curve2, N+1)
+
+    return curve1Resample, curve2Resample
+
+
+def cosineSampleCurveSections(curve, splitPoint):
+    """
+    Take a curve profile in consistent 2D coordinates
+    (such as m'-theta) and a point along the curve
+    to split it (not necessarily one of the actual
+    curve points), and output two curves which are
+    resampled versions of each half of the curve with
+    one more point and with a cosine distribution of
+    points along the section of arclength each output
+    curve occupies
+    """
+    # number of points
+    N = curve.shape[0]
+    # get fractional arclength (u)
+    tck, u = splprep([curve[:, 0], curve[:, 1]], s=0)
+    # create interpolant between u and curve for later use
+    #curveSplineObj = CubicSpline(u, curve, axis=0, bc_type='not-a-knot')
+    
+    # find the 'u' value where splitPoint is along curve
+    uSplineObj = CubicSpline(curve[:,0], u, axis=0, bc_type='not-a-knot')
+    uI = uSplineObj(splitPoint[0])
+    # create 2 cosine distributions of u for each half
+    ucos1 = cosineSpace(N+1, u[0], uI)
+    ucos2 = cosineSpace(N+1, uI, u[-1])
+    # interpolate back to the curve coordinates to create new curves
+    #curve1 = curveSplineObj(ucos1)
+    #curve2 = curveSplineObj(ucos2)
+    curve1 = splev(ucos1, tck)
+    curve2 = splev(ucos2, tck)
+
+    return np.array([curve1[0], curve1[1]]).T, np.array([curve2[0], curve2[1]]).T
+
+
 def mptToCyl(arrmpt, upstreamMprime, blade1PMprime, downstreamMprime, hub, cas):
     """
     Take an array in m'-theta and convert to cylindrical coordinates
@@ -1691,12 +1753,6 @@ def trimAndRefineExt(extCyl, res, mul, endZ, keep, hub, cas):
     return trimmedExtCyl
 
 
-# JD: UP TO HERE
-# This function is somehow distorting the blade profile
-# specifically for blade 2 near the TE on some sections,
-# including at the casing.
-# Actually almost all the LE/TE regions on both blades
-# are suboptimal looking, with abrupt changes in curvature.
 def splitBladesAndOffsets(blade1Cyl, blade2Cyl, offset1Cyl, offset2Cyl, offsetVertices1Cyl, offsetVertices2Cyl, mid1, mid2, crossPassageRes, passageRes):
     """
     Split blade and offset curves at mid-chord to upstream and downstream parts
@@ -1821,6 +1877,38 @@ def changeNumPointsKeepDist(curve, N):
 
     # Finally convert back to Cylindrical:
     return np.array(mf.cart2pol(newCurveCart[:, 0], newCurveCart[:, 1], newCurveCart[:, 2])).T
+
+
+def changeNumPointsKeepDist2D(curve, N):
+    # A new function that maintains the distribution of points
+    # along a 2D curve.
+    # Maintain the frac arc length vs. frac points
+
+    Norig = curve.shape[0]
+    pointFracOrig = np.linspace(0, Norig, num=Norig, endpoint=True)/Norig
+    pointFracNew = np.linspace(0, N, num=N, endpoint=True)/N
+
+    # Assumes 2D data in consistent coordinates (m'-theta)
+
+    # 1. Get t values (fractional arclength)
+    tck, u = splprep([curve[:, 0], curve[:, 1]], s=0)
+    
+    # 2. Once the new arc length fractions are obtained,
+    # to map them back to actual coordintes, use
+    # cubic spline interpolation with the 'x' values using
+    # being the 't' values and the 'y' values being
+    # the 2 spatial coordinates
+    curveSplineObj = CubicSpline(u, curve, axis=0, bc_type='not-a-knot')
+
+    # 3. Get new arclength fractions by maintaining
+    # the arc length fraction vs. fraction of points
+    # So the thing that's known is the new number of points
+    linInterpObj = interp1d(pointFracOrig, u)
+    uNew = linInterpObj(pointFracNew)
+
+    # 4. Finally, use the new arc length fractions to get
+    # new coordinates from the spline object
+    return curveSplineObj(uNew)
 
 
 def matchArcLengthFractions(curveToMatch, curveToModify):
@@ -2010,6 +2098,17 @@ def fillInOutHubCas(blade1UpExtCyl, blade2UpExtCyl, blade1DnExtCyl, blade2DnExtC
     casDPtsCyl = np.swapaxes(casDPtsCyl, 0, 1)
 
     casPtsCyl = np.vstack((casAPtsCyl, casBPtsCyl[1:, :], casCPtsCyl[1:, :], casDPtsCyl[1:, :]))
+
+    """
+    plt.plot(hubC1[:,2],hubC1[:,0]*hubC1[:,1],'-r')
+    plt.plot(hubC2[:,2],hubC2[:,0]*hubC2[:,1],'-r')
+    plt.plot(midCurveHubPtsCyl[:,2],midCurveHubPtsCyl[:,0]*midCurveHubPtsCyl[:,1],'-r')
+    plt.plot(crosspassageDnHubPtsCyl[:,2],crosspassageDnHubPtsCyl[:,0]*crosspassageDnHubPtsCyl[:,1],'-r')
+    plt.plot(hubCPtsCyl[:, :, 2].T, hubCPtsCyl[:, :, 0].T*hubCPtsCyl[:, :, 1].T, 'o-b')
+    plt.plot(hubCPtsCyl[:, :, 2], hubCPtsCyl[:, :, 0]*hubCPtsCyl[:, :, 1], 'o-b')
+    plt.axis('equal')
+    plt.show()
+    """
 
     return inletPtsCyl, outletPtsCyl, hubPtsCyl, casPtsCyl
 
@@ -4027,7 +4126,9 @@ def main() -> int:
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
         calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap)
-        
+
+    bob = alice
+
     return 0
 
 
