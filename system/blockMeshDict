@@ -45,6 +45,7 @@ the axial direction, with the net flow in the +Z direction.
 18 November 2025: still have some quasi-random surfaces/edges disabled, but
 				  grid is finally working with no errors, non-ortho < 80,
 				  and successfully makes periodic matches.
+23 April    2026: only need to disable edge projections to blade TEs.
 */
 
 // ------------ START INPUT BLOCK -------------------- //
@@ -933,7 +934,7 @@ edges
 
 	// vPPH vPPC (covered already)
 	// vMPH vMPC (covered already)
-	project vTPH vTPC (pBladeDn pOBDn)//(pOBDn) //(pBladeDn pOBDn) // make equivalent to one for next block that causes problems
+	project vTPH vTPC (pOBDn) //(pBladeDn pOBDn) // make equivalent to one for next block that causes problems
 	// vUPH vUPC (covered already)
 
 	// edges of second blade BL block on min Q side
@@ -950,7 +951,7 @@ edges
 	// vMNH vMNC (covered already)
 	// vPNH vPNC (covered already)
 	// vUNH vUNC (covered already)
-	project vTNH vTNC (nBladeDn nOBDn)//(nOBDn) //(nBladeDn nOBDn) // this one is causing a problem; seems to work if I just do nOBDn
+	project vTNH vTNC (nOBDn) //(nBladeDn nOBDn) // this one is causing a problem; seems to work if I just do nOBDn
 
 	// edges of downstream block
     // vUNH vUPH (covered already)
