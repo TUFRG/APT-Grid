@@ -1,0 +1,102 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2006                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     simpleFoam;
+
+startFrom       latestTime;
+
+startTime       0;
+
+stopAt          endTime;
+
+endTime         60;
+
+deltaT          1;
+
+adjustTimeStep yes;
+
+maxCo            1;
+
+writeControl    runTime;
+
+writeInterval   10;
+
+purgeWrite      1;
+
+writeFormat     binary;
+
+writeCompression no;
+
+timeFormat      general;
+
+timePrecision   8;
+
+runTimeModifiable yes;
+
+
+functions
+{
+	yPlus
+	{
+		type yPlus;
+		libs ( fieldFunctionObjects );
+		writeFields yes;
+		executeControl writeTime;
+		writeControl writeTime;
+	}
+
+	inletFlux
+	{
+		type            surfaceFieldValue;
+		libs            ("libfieldFunctionObjects.so");
+		enabled         true;
+		log             true;
+		writeFields     yes;
+		executeControl  writeTime;
+		writeControl    writeTime;
+		surfaceFormat   raw;  
+		regionType      patch;
+		name            inlet;
+		operation       sum;
+		fields
+		(
+			phi
+		);
+	}
+
+	outletFlux
+	{
+		type            surfaceFieldValue;
+		libs            ("libfieldFunctionObjects.so");
+		enabled         true;
+		log             true;
+		writeFields     yes;
+		executeControl  writeTime;
+		writeControl    writeTime;
+		surfaceFormat   raw; 
+		regionType      patch;
+		name            outlet;
+		operation       sum;
+		fields
+		(
+			phi
+		);
+	}
+
+}
+
+// ************************************************************************* //

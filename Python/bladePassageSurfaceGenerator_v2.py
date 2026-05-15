@@ -2200,12 +2200,12 @@ def fixRadialCoords2(funcR, arr):
     return arrMod
 
 
-def cylToCart(arrCyl):
+def cylToCart(arrCyl, thetaShift):
     """
     converts input array in cylindrical coordinates (last dimension)
     to Cartesian. Assumes (theta, r, z) for cylindrical data.
     """
-    th = arrCyl[:, :, 0]
+    th = arrCyl[:, :, 0] + thetaShift
     r = arrCyl[:, :, 1]
     z = arrCyl[:, :, 2]
     x = r * np.cos(th)
@@ -2280,6 +2280,50 @@ def quadratic_bezier_curve(p0, p1, p2, num_points=100):
                    2 * (1 - t) * t * p1[:, np.newaxis] + \
                    t**2 * p2[:, np.newaxis]
     return curve_points.T
+
+
+def centrePassage(dataset1, dataset2):
+    """
+    Takes in 2 datasets in cylindrical coordinates, where the 1st element
+    of the coordinates (last dimension) is the angular coordinate theta.
+    Ensures that the datasets together lie in the domain (-pi, pi).
+    Returns updated datasets as well as the theta-shift applied to all
+    data to achieve the result.
+    """
+
+    # should be the case that dataset1 is at smaller theta-values than dataset2
+
+    # dataset1/2(..., 0) is the theta-data
+    minTheta1 = dataset1[..., 0].min()
+    minTheta2 = dataset2[..., 0].min()
+    maxTheta1 = dataset1[..., 0].max()
+    maxTheta2 = dataset2[..., 0].max()
+
+    # Checks: biggest difference should not be more than pi in practice
+
+    # Check 1: is dataset1 split across the -pi / pi boundary?
+    dataset1shifted = dataset1.copy()
+    if (maxTheta1-minTheta1)>np.pi:
+        # since this is dataset1, move high theta points
+        # over to the low theta ones
+        dataset1shifted[dataset1[..., 0] >= 0, 0] -= 2*np.pi
+    # Check 2: is dataset2 split across the -pi / pi boundary?
+    dataset2shifted = dataset2.copy()
+    if (maxTheta2-minTheta2)>np.pi:
+        # since this is dataset2, move low theta points
+        # over to the high theta ones
+        dataset2shifted[dataset2[..., 0] <  0, 0] += 2*np.pi
+    # Now we guarantee neither dataset is split and that dataset1 lies at
+    # lower theta coordinates than dataset2
+
+    # Now find middle of passage and ensure shifted properly
+    minNewTheta1 = dataset1shifted[..., 0].min()
+    maxNewTheta2 = dataset2shifted[..., 0].max()
+    thetaShift = 0.5*(minNewTheta1 + maxNewTheta2)
+    dataset1shifted[..., 0] -= thetaShift
+    dataset2shifted[..., 0] -= thetaShift
+    
+    return dataset1shifted, dataset2shifted, thetaShift
 
 
 # BL thickness calculator
@@ -3886,6 +3930,9 @@ def main() -> int:
         blade1Cyl = CartToCyl(blade1)
         blade2Cyl = CartToCyl(blade2)
 
+        # Ensure that the two set of blades are locally in (-pi, pi)
+        blade1Cyl, blade2Cyl, thetaShift = centrePassage(blade1Cyl, blade2Cyl)
+
         # Check that first and last blade profiles lie on or extend beyond hub/casing, adjust as needed
         blade1Cyl, blade2Cyl, nSections = trimProfilesToGasPath(blade1Cyl, blade2Cyl, hub, cas, res)
         # Now have the proper sections, proceed
@@ -4116,40 +4163,42 @@ def main() -> int:
         blade2UpCasPtsCyl = fixRadialCoords2(funcR[-1], blade2UpCasPtsCyl)
         blade2DnCasPtsCyl = fixRadialCoords2(funcR[-1], blade2DnCasPtsCyl)
 
-        # Convert everything back to Cartesian coordinates
-        blade1UpCart = cylToCart(blade1UpCyl)
-        offset1UpCart = cylToCart(offset1UpCyl)
-        blade2UpCart = cylToCart(blade2UpCyl)
-        offset2UpCart = cylToCart(offset2UpCyl)
-        blade1DnCart = cylToCart(blade1DnCyl)
-        offset1DnCart = cylToCart(offset1DnCyl)
-        blade2DnCart = cylToCart(blade2DnCyl)
-        offset2DnCart = cylToCart(offset2DnCyl)
-        crossPassageUpCart = cylToCart(crossPassageUpCyl)
-        crossPassageDnCart = cylToCart(crossPassageDnCyl)
-        midCurveMidCart = cylToCart(midCurveMidCyl)
-        blade1UpExtCart = cylToCart(blade1UpExtCyl)
-        blade2UpExtCart = cylToCart(blade2UpExtCyl)
-        blade1DnExtCart = cylToCart(blade1DnExtCyl)
-        blade2DnExtCart = cylToCart(blade2DnExtCyl)
-        blade1toOffsetUpCart = cylToCart(blade1toOffsetUpCyl)
-        blade2toOffsetUpCart = cylToCart(blade2toOffsetUpCyl)
-        blade1toOffsetDnCart = cylToCart(blade1toOffsetDnCyl)
-        blade2toOffsetDnCart = cylToCart(blade2toOffsetDnCyl)
-        midCurve1Cart = cylToCart(midCurve1Cyl)
-        midCurve2Cart = cylToCart(midCurve2Cyl)
-        inletCart = cylToCart(inletPtsCyl)
-        outletCart = cylToCart(outletPtsCyl)
-        hubCart = cylToCart(hubPtsCyl)
-        casCart = cylToCart(casPtsCyl)
-        blade1UpHubCart = cylToCart(blade1UpHubPtsCyl)
-        blade1DnHubCart = cylToCart(blade1DnHubPtsCyl)
-        blade1UpCasCart = cylToCart(blade1UpCasPtsCyl)
-        blade1DnCasCart = cylToCart(blade1DnCasPtsCyl)
-        blade2UpHubCart = cylToCart(blade2UpHubPtsCyl)
-        blade2DnHubCart = cylToCart(blade2DnHubPtsCyl)
-        blade2UpCasCart = cylToCart(blade2UpCasPtsCyl)
-        blade2DnCasCart = cylToCart(blade2DnCasPtsCyl)
+        # Convert everything back to Cartesian coordinates, including
+        # removing theta-shifts
+        blade1UpCart = cylToCart(blade1UpCyl, thetaShift)
+        offset1UpCart = cylToCart(offset1UpCyl, thetaShift)
+        blade2UpCart = cylToCart(blade2UpCyl, thetaShift)
+        offset2UpCart = cylToCart(offset2UpCyl, thetaShift)
+        blade1DnCart = cylToCart(blade1DnCyl, thetaShift)
+        offset1DnCart = cylToCart(offset1DnCyl, thetaShift)
+        blade2DnCart = cylToCart(blade2DnCyl, thetaShift)
+        offset2DnCart = cylToCart(offset2DnCyl, thetaShift)
+        crossPassageUpCart = cylToCart(crossPassageUpCyl, thetaShift)
+        crossPassageDnCart = cylToCart(crossPassageDnCyl, thetaShift)
+        midCurveMidCart = cylToCart(midCurveMidCyl, thetaShift)
+        blade1UpExtCart = cylToCart(blade1UpExtCyl, thetaShift)
+        blade2UpExtCart = cylToCart(blade2UpExtCyl, thetaShift)
+        blade1DnExtCart = cylToCart(blade1DnExtCyl, thetaShift)
+        blade2DnExtCart = cylToCart(blade2DnExtCyl, thetaShift)
+        blade1toOffsetUpCart = cylToCart(blade1toOffsetUpCyl, thetaShift)
+        blade2toOffsetUpCart = cylToCart(blade2toOffsetUpCyl, thetaShift)
+        blade1toOffsetDnCart = cylToCart(blade1toOffsetDnCyl, thetaShift)
+        blade2toOffsetDnCart = cylToCart(blade2toOffsetDnCyl, thetaShift)
+        midCurve1Cart = cylToCart(midCurve1Cyl, thetaShift)
+        midCurve2Cart = cylToCart(midCurve2Cyl, thetaShift)
+        inletCart = cylToCart(inletPtsCyl, thetaShift)
+        outletCart = cylToCart(outletPtsCyl, thetaShift)
+        hubCart = cylToCart(hubPtsCyl, thetaShift)
+        casCart = cylToCart(casPtsCyl, thetaShift)
+        blade1UpHubCart = cylToCart(blade1UpHubPtsCyl, thetaShift)
+        blade1DnHubCart = cylToCart(blade1DnHubPtsCyl, thetaShift)
+        blade1UpCasCart = cylToCart(blade1UpCasPtsCyl, thetaShift)
+        blade1DnCasCart = cylToCart(blade1DnCasPtsCyl, thetaShift)
+        blade2UpHubCart = cylToCart(blade2UpHubPtsCyl, thetaShift)
+        blade2DnHubCart = cylToCart(blade2DnHubPtsCyl, thetaShift)
+        blade2UpCasCart = cylToCart(blade2UpCasPtsCyl, thetaShift)
+        blade2DnCasCart = cylToCart(blade2DnCasPtsCyl, thetaShift)
+
         # Fill final X, Y, Z arrays
         Xvalues, Yvalues, Zvalues = combineArrays(blade1UpCart,
                                                   offset1UpCart,

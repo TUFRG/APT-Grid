@@ -1,0 +1,76 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     | Website:  https://openfoam.org
+    \\  /    A nd           | Version:  11
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      fvSchemes;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+ddtSchemes
+{
+    default         steadyState;
+}
+
+gradSchemes
+{
+    default         Gauss linear;
+
+    //limited         cellLimited Gauss linear 1;
+   // grad(U)         $limited;
+   // grad(k)         $limited;
+   // grad(omega)     $limited;
+}
+
+divSchemes
+{
+    default             none;
+
+    div(phi,U)          Gauss linearUpwindV limited;
+
+    turbulence          Gauss upwind;//linearUpwind limited;
+    energy              Gauss upwind;//linearUpwind limited;
+
+    div(phi,k)          $turbulence;
+    div(phi,omega)      $turbulence;
+
+    div(phi,e)          $energy;
+    div(phi,K)          $energy;
+    div(phi,Ekp)        $energy;
+    div(phi,(p|rho))    $energy;
+
+    div((phi|interpolate(rho)),p) Gauss upwind;
+
+    //div(((rho*nuEff)*dev2(T(grad(U))))) Gauss linear; //orig. rho*nuEff
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;
+    div(phi,epsilon)   $turbulence;
+}
+
+laplacianSchemes
+{
+    default         Gauss linear corrected;
+    laplacian(diffusivity,cellDisplacement) Gauss linear corrected;
+}
+
+interpolationSchemes
+{
+    default         linear;
+}
+
+snGradSchemes
+{
+    default         corrected;
+}
+
+wallDist
+{
+    method meshWave;
+}
+
+// ************************************************************************* //

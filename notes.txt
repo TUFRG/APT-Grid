@@ -1,16 +1,11 @@
-8 May 2026
+15 May 2026
 
-OK the blades I got from Adekola were already pre-processed to change the axis from x to z.
-He sent me a Python script to do this, I need to integrate this into the code and add an input where the machine axis is selected, for the future.
+Implemented a new fix for blades that are split across the +pi/-pi boundary created through the use of arctan2 to convert to cylindrical coordinates. Tested this on a full-annulus set of identical blades and it works, all passage STLs are correclty generated.
 
-I wrote a Bash script (top-level folder: bladeFileSetup.sh) that copies the files from each folder to a flat fileset with correct naming. After doing this, the current code runs.
+In addition, I modified the framework for creating passage meshes to support multiple passages in general, and added an example script that creates 2 passages and joins them with mergeMeshes and stitchMesh -integral.
 
-Ran into an issue where LE and TE are not identical between the 2 blades of each passage from NAX. First workaround was to just loosen tolerance on this. Turns out this is not really important for surface generation. Surfaces generate OK.
+Current issues/features to deal with:
 
-However I realized there is an issue with the grid parameters (passageParameters) -- consistent grading parameters and numbers of axial cells are not guaranteed because of the fact that the distances from inlet to LE and outlet to TE are not exactly the same for each passage. Other than enforcing LE and TE to be the same for all passages as a pre-processing step, the best way I can see for dealing with this is to run as it is currently, and then reconcile the discrepancies in a 2nd "clean-up" pass at the end before going to generate meshes with blockMesh.
+1. Need to add one more cylindrical-coordinates geometry check: make sure that "blade1" is actually at lower theta-coordinates than "blade 2" after ensuring neither is split across the +pi/-pi boundary.
 
-I will deal with that issue later.
-
-I got a set of blades (z-axis oriented already) from Adekola with no perturbations, which means those issues shouldn't arise. For this set the only problem I expect to have to deal with is the "atan2" problem.
-
-I think the best way to do it is to create a "local domain" of theta coordinates for each passage, i.e. ensure each passage is centred at a "local" theta=0 so that we guarantee that the cylindrical coordinates all lie on the -pi to +pi domain. Then rotate back into position before conversion to Cartesian coordinates at the very end of the surface generation process.
+2. Ran into an issue where LE and TE are not identical between the 2 blades of each passage from NAX (for aperiodic blade rows). First workaround was to just loosen tolerance on this. Turns out this is not really important for surface generation. Surfaces generate OK. However I realized there is an issue with the grid parameters (passageParameters) -- consistent grading parameters and numbers of axial cells are not guaranteed because of the fact that the distances from inlet to LE and outlet to TE are not exactly the same for each passage. Other than enforcing LE and TE to be the same for all passages as a pre-processing step, the best way I can see for dealing with this is to run as it is currently, and then reconcile the discrepancies in a 2nd "clean-up" pass at the end before going to generate meshes with blockMesh.
