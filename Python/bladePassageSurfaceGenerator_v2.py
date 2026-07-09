@@ -15,6 +15,8 @@ Active development ongoing as of May 2026
 
 import sys
 import os
+import json
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d, CubicSpline, splprep, splev
@@ -3770,68 +3772,223 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     paramFile.close()
 
 
+
+def normalize_folder_path(path):
+    """
+    Convert a folder path to an absolute path and make sure it ends with os.sep.
+    The original backend style uses dataPath + fileName, so the slash matters.
+    """
+    path = str(path).strip()
+
+    if not path:
+        return ""
+
+    path = os.path.abspath(os.path.expanduser(path))
+
+    if not path.endswith(os.sep):
+        path += os.sep
+
+    return path
+
+
+def file_name_only(path_or_name):
+    """
+    The GUI may pass either a full file path or just a file name.
+    The backend expects only the file name because it uses dataPath + fileName.
+    """
+    path_or_name = str(path_or_name).strip()
+
+    if not path_or_name:
+        return ""
+
+    return os.path.basename(path_or_name)
+
+
+def get_bool(value, default=False):
+    if value is None:
+        return default
+
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, int):
+        return value != 0
+
+    value = str(value).strip().lower()
+
+    return value in ["true", "1", "yes", "y", "enabled", "on"]
+
+
+def get_int(config, key, default):
+    try:
+        return int(float(config.get(key, default)))
+    except Exception:
+        return default
+
+
+def get_float(config, key, default):
+    try:
+        return float(config.get(key, default))
+    except Exception:
+        return default
+
+
+def load_gui_config():
+    """
+    Reads the GUI config file passed from main.py using:
+        --config path/to/apt_grid_run_config.json
+    """
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config", default=None)
+    args, _ = parser.parse_known_args()
+
+    if args.config is None:
+        print("[Info] No GUI config file provided. Using backend default values.")
+        return {}
+
+    config_path = os.path.abspath(args.config)
+
+    if not os.path.exists(config_path):
+        print(f"[Warning] GUI config file was not found: {config_path}")
+        print("[Warning] Using backend default values.")
+        return {}
+
+    print(f"Reading GUI configuration: {config_path}")
+
+    with open(config_path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def get_curve_file_dimensions(curve_file_path):
+    """
+    Replaces grep/wc/sed with pure Python so the backend works on Windows.
+
+    Returns:
+        nSections, ptsPerSection
+    """
+    if not os.path.exists(curve_file_path):
+        raise FileNotFoundError(f"Blade curve file not found: {curve_file_path}")
+
+    n_sections = 0
+    point_counts = []
+    current_points = 0
+    inside_profile = False
+
+    with open(curve_file_path, "r", encoding="utf-8", errors="ignore") as file:
+        for line in file:
+            stripped = line.strip()
+
+            if not stripped:
+                continue
+
+            if "Profile" in stripped:
+                if inside_profile:
+                    point_counts.append(current_points)
+
+                n_sections += 1
+                current_points = 0
+                inside_profile = True
+
+            else:
+                if inside_profile and not stripped.startswith("#"):
+                    current_points += 1
+
+    if inside_profile:
+        point_counts.append(current_points)
+
+    if n_sections == 0:
+        raise ValueError(f"No Profile sections found in blade file: {curve_file_path}")
+
+    point_counts = [count for count in point_counts if count > 0]
+
+    if not point_counts:
+        raise ValueError(f"No blade coordinate points found in blade file: {curve_file_path}")
+
+    pts_per_section = point_counts[0]
+
+    return n_sections, pts_per_section
+
+
 def main() -> int:
     """ All the main blocks of the code get executed here """
 
     """ INPUTS: """
-    # By Jeff Defoe -- more general input code
-    dataPath = '../inputData/'
-    hubFileName = 'IGVHub_reformatted.curve'
-    casFileName = 'IGVCasing_reformatted.curve'
-    bladeCurveFile = 'IGVBlade.curve'
-    outputPath = '../outputData/'
-    Nb = 20  # number of blades in row
-    periodic = 0  # mode selection
-    
-    # Grid generation tuning parameters
-    percentVal = 0.04  # fraction of arclength of blades where we cut off to avoid odd cell sizes in blade-to-offset BL blocks
-    percentValNonCutLE = 0.02  # fraction of arclength of blades where we cut off to avoid higghly non-orthogonal cells in blade-to-offset BL blocks (LE)
-    percentValNonCutTE = 0.00  # fraction of arclength of blades where we cut off to avoid higghly non-orthogonal cells in blade-to-offset BL blocks (TE)
-    # Values to constrain cross-passage and offset curves to avoid problems:
-    angConstraintCurves = 10  # deg
-    angConstraintOffsets = 1  # deg
+    config = load_gui_config()
 
-    # Geometry definition inputs:
-    scale = 0.001  # relationship of input data to metres.
-        # For example, if input data in mm, scale = 0.001
+    dataPath = normalize_folder_path(config.get("dataPath", "../inputData/"))
+    hubFileName = file_name_only(config.get("hubFileName", "IGVHub_reformatted.curve"))
+    casFileName = file_name_only(config.get("casFileName", "IGVCasing_reformatted.curve"))
+    bladeCurveFile = file_name_only(config.get("bladeCurveFile", "IGVBlade.curve"))
+    outputPath = normalize_folder_path(config.get("outputPath", "../output/"))
+
+    Nb = get_int(config, "Nb", 20)
+    periodic = get_int(config, "periodic", 0)
+    if periodic !=0:
+        periodic =1
+
+    # Grid generation tuning parameters
+    percentVal = get_float(config, "percentVal", 0.04)
+    percentValNonCutLE = get_float(config, "percentValNonCutLE", 0.02)
+    percentValNonCutTE = get_float(config, "percentValNonCutTE", 0.00)
+    angConstraintCurves = get_float(config, "angConstraintCurves", 10)
+    angConstraintOffsets = get_float(config, "angConstraintOffsets", 1)
+
+    # Geometry definition inputs
+    scale = get_float(config, "scale", 0.001)
 
     # Grid generation inputs
-    nrad = 40  # Number of radial points outside endwall BLs
-    # optional BL definition parameters
-    rhoref = 1.2  # base SI units (kg/m**3)
-    Uref = 100.0  # base SI units (m/s)
-    LrefHub = 178.0  # input length units (cannot be calculated because it depends on components outside domain)
-    LrefCas = 178.0  # input length units (cannot be calculated because it depends on components outside domain)
-    LrefBla = 35.0  # input length units (JD: this should be calculated = mean chord)
-    muref = 1.8e-5  # base SI units (kg/(m*s))
-    yPlusHub = 5
-    yPlusCas = 5
-    yPlusBla = 5
-    # have option to calculate BL parameters based on above, or just directly
-    # provide BL thickness and first cell size (input units)
-    delHub = calcBLdelta(rhoref,Uref,LrefHub*scale,muref)/scale  # or just set a value (in input units)
-    delCas = calcBLdelta(rhoref,Uref,LrefCas*scale,muref)/scale  # or just set a value (in input units)
-    delBla = calcBLdelta(rhoref,Uref,LrefBla*scale,muref)/scale  # or just set a value (in input units)
-    dy1Hub = calcFirstCellSize(rhoref,Uref,LrefHub*scale,muref,yPlusHub)/scale  # or just set a value (in input units)
-    dy1Cas = calcFirstCellSize(rhoref,Uref,LrefCas*scale,muref,yPlusCas)/scale  # or just set a value (in input units)
-    dy1Bla = calcFirstCellSize(rhoref,Uref,LrefBla*scale,muref,yPlusBla)/scale  # or just set a value (in input units)
-    # Radial grading parameter
-        # value = ratio of cell size at midspan to cell size adjacent endwall BLs
-    gRad = 2
-    # Tangential grading parameters
-        # value = ratio of cell size at midpassage to cell size adjacent blade BLs
-    gTan = 2  #2  # note: 4 gives a reasonable-looking grid
-    additionalTangentialRefine = 8  # 1 = no extra refinement. This is a factor on the midpassage cell size.
-    # Axial clustering parameters
-    # Leading/trailing edge clustering parameters
-    dax1primeLE = 0.003  # This is for about half the blade, so 0.01 means 0.5% chord
-    rLE = 1.2  # expansion ratio for clustering of cells near the LE of the blades
-    dax1primeTE = 0.002  # This is for about half the blade, so 0.01 means 0.5% chord
-    rTE = 1.2  # expansion ratio for clustering of cells near the LE of the blades
-    # Up/downstream expansion ratios of cells further than 1/2 chord away from blades
-    additionalAxialRefine = 2  # 1 = no extra refinement. This is a factor on the midpassage cell size.
-    rUpFar = 1.1  # used such that values > 1 mean cells grow as we get further from blades
-    rDnFar = 1.1  # used such that values > 1 mean cells grow as we get further from blades
+    nrad = get_int(config, "nrad", 40)
+
+    # Boundary-layer reference inputs
+    rhoref = get_float(config, "rhoref", 1.2)
+    Uref = get_float(config, "Uref", 100.0)
+    LrefHub = get_float(config, "LrefHub", 178.0)
+    LrefCas = get_float(config, "LrefCas", 178.0)
+    LrefBla = get_float(config, "LrefBla", 35.0)
+    muref = get_float(config, "muref", 1.8e-5)
+    yPlusHub = get_float(config, "yPlusHub", 5)
+    yPlusCas = get_float(config, "yPlusCas", 5)
+    yPlusBla = get_float(config, "yPlusBla", 5)
+
+    autoBL = get_bool(config.get("autoBL", True), True)
+
+    if autoBL:
+        delHub = calcBLdelta(rhoref, Uref, LrefHub * scale, muref) / scale
+        delCas = calcBLdelta(rhoref, Uref, LrefCas * scale, muref) / scale
+        delBla = calcBLdelta(rhoref, Uref, LrefBla * scale, muref) / scale
+        dy1Hub = calcFirstCellSize(rhoref, Uref, LrefHub * scale, muref, yPlusHub) / scale
+        dy1Cas = calcFirstCellSize(rhoref, Uref, LrefCas * scale, muref, yPlusCas) / scale
+        dy1Bla = calcFirstCellSize(rhoref, Uref, LrefBla * scale, muref, yPlusBla) / scale
+    else:
+        delHub = get_float(config, "delHub", calcBLdelta(rhoref, Uref, LrefHub * scale, muref) / scale)
+        delCas = get_float(config, "delCas", calcBLdelta(rhoref, Uref, LrefCas * scale, muref) / scale)
+        delBla = get_float(config, "delBla", calcBLdelta(rhoref, Uref, LrefBla * scale, muref) / scale)
+        dy1Hub = get_float(config, "dy1Hub", calcFirstCellSize(rhoref, Uref, LrefHub * scale, muref, yPlusHub) / scale)
+        dy1Cas = get_float(config, "dy1Cas", calcFirstCellSize(rhoref, Uref, LrefCas * scale, muref, yPlusCas) / scale)
+        dy1Bla = get_float(config, "dy1Bla", calcFirstCellSize(rhoref, Uref, LrefBla * scale, muref, yPlusBla) / scale)
+
+    # Mesh tuning inputs
+    gRad = get_float(config, "gRad", 2)
+    gTan = get_float(config, "gTan", 2)
+    additionalTangentialRefine = get_int(config, "additionalTangentialRefine", 8)
+    dax1primeLE = get_float(config, "dax1primeLE", 0.003)
+    rLE = get_float(config, "rLE", 1.2)
+    dax1primeTE = get_float(config, "dax1primeTE", 0.002)
+    rTE = get_float(config, "rTE", 1.2)
+    additionalAxialRefine = get_int(config, "additionalAxialRefine", 2)
+    rUpFar = get_float(config, "rUpFar", 1.1)
+    rDnFar = get_float(config, "rDnFar", 1.1)
+
+    print("Using run settings from GUI/config:")
+    print(f"  dataPath: {dataPath}")
+    print(f"  hubFileName: {hubFileName}")
+    print(f"  casFileName: {casFileName}")
+    print(f"  bladeCurveFile: {bladeCurveFile}")
+    print(f"  outputPath: {outputPath}")
+    print(f"  Nb: {Nb}")
+    print(f"  periodic: {periodic}")
+    print(f"  scale: {scale}")
+    print(f"  nrad: {nrad}")
     """ END INPUTS """
     
     # STL definition inputs, typically do not need to be modified:
@@ -3896,22 +4053,24 @@ def main() -> int:
             curveSuffix = str(a)
             blade1numStr = str(blade1num)
             blade2numStr = str(blade2num)
-        commandGetSections = ["grep Profile " + dataPath + bladeCurveFile + curveSuffix + " | wc -l"]
-        cmdResult = subprocess.run(commandGetSections, capture_output=True, text=True, shell=True)
-        nSections = int(cmdResult.stdout)
-        commandGetPointsPerSection = ["sed '1,/Profile/d;/Profile/,$d' " + dataPath + bladeCurveFile + curveSuffix + " | sed '/^[[:space:]]*$/d' | wc -l"]
-        cmdResult = subprocess.run(commandGetPointsPerSection, capture_output=True, text=True, shell=True)
-        ptsPerSection = int(cmdResult.stdout)
-        N = int(ptsPerSection/2)
-        Nr = int(2*N)  #number of points on blade profiles increased 
-        with open(dataPath + bladeCurveFile + blade1numStr, 'rb') as f:
-            clean_lines = (line.replace(b',',b' ') for line in f)
+        blade1FilePath = dataPath + bladeCurveFile + blade1numStr
+
+        nSections, ptsPerSection = get_curve_file_dimensions(blade1FilePath)
+
+        N = int(ptsPerSection / 2)
+        Nr = int(2 * N)  # number of points on blade profiles increased
+
+        with open(blade1FilePath, 'rb') as f:
+            clean_lines = (line.replace(b',', b' ') for line in f)
             blade1 = np.genfromtxt(clean_lines, comments='#')
         blade1 = blade1.reshape((ptsPerSection, nSections, 3), order='F')
         if periodic == 0:
-            with open(dataPath + bladeCurveFile + blade2numStr, 'rb') as f:
-                clean_lines = (line.replace(b',',b' ') for line in f)
+            blade2FilePath = dataPath + bladeCurveFile + blade2numStr
+
+            with open(blade2FilePath, 'rb') as f:
+                clean_lines = (line.replace(b',', b' ') for line in f)
                 blade2 = np.genfromtxt(clean_lines, comments='#')
+
             blade2 = blade2.reshape((ptsPerSection, nSections, 3), order='F')
         elif periodic == 1:
             pitchAngle = 2*np.pi/Nb
