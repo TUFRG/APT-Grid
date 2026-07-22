@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from datetime import datetime
 from tkinter import filedialog, ttk, messagebox
 
@@ -21,6 +22,122 @@ SIDEBAR_BG = "#eef7ff"
 CONTENT_BG = "#f8fbff"
 TOPBAR_BG = "#eaf5ff"
 MAIN_BLUE = "#005298"
+
+
+PARAMETER_HELP_TEXT = {
+    # Basic Setup
+    "Nb": "",
+    "periodic": "",
+    "scale": "",
+    "nrad": "",
+
+    # Boundary Layer reference inputs
+    "rhoref": "",
+    "Uref": "",
+    "LrefHub": "",
+    "LrefCas": "",
+    "LrefBla": "",
+    "muref": "",
+    "yPlusHub": "",
+    "yPlusCas": "",
+    "yPlusBla": "",
+
+    # Boundary Layer manual results
+    "delHub": "",
+    "delCas": "",
+    "delBla": "",
+    "dy1Hub": "",
+    "dy1Cas": "",
+    "dy1Bla": "",
+
+    # Mesh Tuning
+    "gRad": "",
+    "gTan": "",
+    "additionalTangentialRefine": "",
+    "additionalAxialRefine": "",
+    "dax1primeLE": "",
+    "rLE": "",
+    "dax1primeTE": "",
+    "rTE": "",
+    "rUpFar": "",
+    "rDnFar": "",
+
+    # Advanced
+    "percentVal": "",
+    "percentValNonCutLE": "",
+    "percentValNonCutTE": "",
+    "angConstraintCurves": "",
+    "angConstraintOffsets": "",
+}
+
+
+class ParameterHelp:
+    def __init__(self, widget, title, text):
+        self.widget = widget
+        self.title = title
+        self.text = text
+        widget.bind("<Button-1>", self.show_definition_window)
+        widget.bind("<Enter>", self._on_enter)
+        widget.bind("<Leave>", self._on_leave)
+
+    def _on_enter(self, event=None):
+        self.widget.configure(cursor="hand2")
+
+    def _on_leave(self, event=None):
+        self.widget.configure(cursor="")
+
+    def show_definition_window(self, event=None):
+        popup = tk.Toplevel(self.widget)
+        popup.title(f"{self.title} Definition")
+        popup.configure(bg="white")
+        popup.resizable(False, False)
+        popup.transient(self.widget.winfo_toplevel())
+        popup.grab_set()
+
+        popup.update_idletasks()
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + 20
+        popup.geometry(f"420x190+{x}+{y}")
+
+        header = tk.Label(
+            popup,
+            text=self.title,
+            font=("Segoe UI", 12, "bold"),
+            fg=MAIN_BLUE,
+            bg="white",
+            anchor="w"
+        )
+        header.pack(fill="x", padx=22, pady=(20, 8))
+
+        definition = tk.Label(
+            popup,
+            text=self.text,
+            font=("Segoe UI", 10),
+            fg="#1f2933",
+            bg="white",
+            justify="left",
+            wraplength=370,
+            anchor="nw",
+            height=4
+        )
+        definition.pack(fill="both", expand=True, padx=22, pady=(0, 16))
+
+        close_button = tk.Button(
+            popup,
+            text="Close",
+            command=popup.destroy,
+            font=("Segoe UI", 9),
+            fg=MAIN_BLUE,
+            bg="#eef7ff",
+            activeforeground=MAIN_BLUE,
+            activebackground="#d6ecff",
+            relief="flat",
+            bd=0,
+            padx=18,
+            pady=7,
+            cursor="hand2"
+        )
+        close_button.pack(anchor="e", padx=22, pady=(0, 20))
 
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
@@ -147,23 +264,296 @@ class BasePage(ttk.Frame):
         self.body.columnconfigure(0, weight=1)
 
 
+    def _create_parameter_label(self, parent, label_text, help_key):
+        label_frame = ttk.Frame(parent, style="Content.TFrame")
+
+        label = ttk.Label(label_frame, text=label_text, style="Field.TLabel")
+        label.grid(row=0, column=0, sticky="w")
+
+        help_text = PARAMETER_HELP_TEXT.get(help_key, "")
+        help_icon = tk.Canvas(
+            label_frame,
+            width=14,
+            height=14,
+            bg=CONTENT_BG,
+            highlightthickness=0,
+            bd=0,
+            cursor="hand2"
+        )
+        help_icon.create_oval(1, 1, 13, 13, fill="white", outline="#9bb7d4", width=1)
+        help_icon.create_text(7, 7, text="?", fill="#5f7ea8", font=("Segoe UI", 7, "bold"))
+        help_icon.grid(row=0, column=1, sticky="w", padx=(5, 0))
+        ParameterHelp(help_icon, label_text, help_text)
+
+        return label_frame
+
+
 class HomePage(BasePage):
     def __init__(self, parent, app):
         super().__init__(parent, app, title="APT-Grid Interface")
-        self.body.rowconfigure(1, weight=1)
 
-        intro = ttk.Label(
-            self.body,
-            text=(
-                "Welcome to the APT-Grid Interface. "
-                "Use the sidebar to select input files, configure grid parameters, "
-                "adjust mesh settings, and run the blade passage grid-generation workflow."
-            ),
-            style="Body.TLabel",
-            wraplength=900,
-            justify="left",
+        self.workflow_step_cards = []
+        self.workflow_animation_index = 0
+        self.workflow_animation_after_id = None
+
+        self._build_page()
+        self._start_workflow_animation()
+
+    def _build_page(self):
+        self.body.columnconfigure(0, weight=1)
+        self.body.configure(padding=(0, 50, 0, 0))
+
+        self.body.rowconfigure(0, weight=0)
+        self.body.rowconfigure(1, weight=0)
+
+        # --------------------------------------------------
+        # Welcome / overview card
+        # --------------------------------------------------
+        overview_card = self._create_card(self.body)
+        overview_card.grid(row=0, column=0, sticky="ew", pady=(0, 32))
+        overview_card.columnconfigure(0, weight=1)
+        overview_card.columnconfigure(1, weight=0)
+
+        overview_title = tk.Label(
+            overview_card,
+            text="Welcome",
+            font=("Segoe UI", 16, "bold"),
+            fg=MAIN_BLUE,
+            bg="white"
         )
-        intro.grid(row=0, column=0, sticky="w")
+        overview_title.grid(row=0, column=0, sticky="w", padx=28, pady=(22, 8))
+
+        overview_text = tk.Label(
+            overview_card,
+            text=(
+                "APT-Grid Interface provides a guided setup environment for selecting geometry files, "
+                "configuring blade passage parameters, defining boundary-layer and mesh controls, "
+                "and launching the backend surface-generation process."
+            ),
+            font=("Segoe UI", 10),
+            fg="#1f2933",
+            bg="white",
+            wraplength=1160,
+            justify="left"
+        )
+        overview_text.grid(row=1, column=0, sticky="w", padx=28, pady=(0, 24))
+
+        start_button = tk.Button(
+            overview_card,
+            text="Start New Project",
+            command=lambda: self.app.show_page("Files"),
+            font=("Segoe UI", 10, "bold"),
+            fg="white",
+            bg=MAIN_BLUE,
+            activeforeground="white",
+            activebackground="#003f73",
+            disabledforeground="white",
+            relief="flat",
+            bd=0,
+            padx=22,
+            pady=9,
+            cursor="hand2"
+        )
+        start_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 28), pady=24)
+
+        # --------------------------------------------------
+        # Lower layout: workflow left, credits right
+        # --------------------------------------------------
+        lower_grid = tk.Frame(self.body, bg=CONTENT_BG)
+        lower_grid.grid(row=1, column=0, sticky="ew")
+        lower_grid.columnconfigure(0, weight=7)
+        lower_grid.columnconfigure(1, weight=5)
+
+        workflow_card = self._create_card(lower_grid)
+        workflow_card.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
+        workflow_card.columnconfigure(0, weight=1)
+
+        workflow_title = tk.Label(
+            workflow_card,
+            text="Workflow Overview",
+            font=("Segoe UI", 16, "bold"),
+            fg=MAIN_BLUE,
+            bg="white"
+        )
+        workflow_title.grid(row=0, column=0, sticky="w", padx=28, pady=(24, 18))
+
+        workflow_steps = [
+            ("01", "Files", "Select geometry files and output path."),
+            ("02", "Setup", "Define blade count, scale, and resolution."),
+            ("03", "Mesh Controls", "Configure boundary layer, mesh tuning, and advanced settings."),
+            ("04", "Run", "Write the configuration file and launch the backend generator."),
+        ]
+
+        diagram_frame = tk.Frame(workflow_card, bg="white")
+        diagram_frame.grid(row=1, column=0, sticky="ew", padx=28, pady=(0, 26))
+        diagram_frame.columnconfigure(0, weight=1)
+
+        for index, (number, title, description) in enumerate(workflow_steps):
+            step_card = tk.Frame(
+                diagram_frame,
+                bg="#fbfdff",
+                highlightbackground="#c8dcf4",
+                highlightthickness=1,
+                bd=0,
+                height=76
+            )
+            step_card.grid(row=index * 2, column=0, sticky="ew")
+            step_card.grid_propagate(False)
+            step_card.columnconfigure(0, weight=0)
+            step_card.columnconfigure(1, weight=1)
+            step_card.rowconfigure(0, weight=1)
+
+            badge = tk.Label(
+                step_card,
+                text=number,
+                font=("Segoe UI", 9, "bold"),
+                fg="white",
+                bg=MAIN_BLUE,
+                width=4,
+                height=1
+            )
+            badge.grid(row=0, column=0, sticky="nsw", padx=(18, 16))
+
+            text_block = tk.Frame(step_card, bg="#fbfdff")
+            text_block.grid(row=0, column=1, sticky="w", padx=(0, 18))
+
+            step_title = tk.Label(
+                text_block,
+                text=title,
+                font=("Segoe UI", 10, "bold"),
+                fg=MAIN_BLUE,
+                bg="#fbfdff",
+                anchor="w"
+            )
+            step_title.grid(row=0, column=0, sticky="w")
+
+            step_desc = tk.Label(
+                text_block,
+                text=description,
+                font=("Segoe UI", 9),
+                fg="#4d5f73",
+                bg="#fbfdff",
+                justify="left",
+                wraplength=560,
+                anchor="w"
+            )
+            step_desc.grid(row=1, column=0, sticky="w", pady=(4, 0))
+
+            self.workflow_step_cards.append({
+                "card": step_card,
+                "badge": badge,
+                "text_block": text_block,
+                "title": step_title,
+                "description": step_desc,
+            })
+
+            if index < len(workflow_steps) - 1:
+                arrow = tk.Label(
+                    diagram_frame,
+                    text="↓",
+                    font=("Segoe UI", 12, "bold"),
+                    fg=MAIN_BLUE,
+                    bg="white"
+                )
+                arrow.grid(row=index * 2 + 1, column=0, sticky="w", padx=36, pady=3)
+
+        credits_card = self._create_card(lower_grid)
+        credits_card.grid(row=0, column=1, sticky="nsew", padx=(18, 0))
+        credits_card.columnconfigure(0, weight=1)
+        credits_card.rowconfigure(3, weight=1)
+
+        credits_title = tk.Label(
+            credits_card,
+            text="Development Credits",
+            font=("Segoe UI", 16, "bold"),
+            fg=MAIN_BLUE,
+            bg="white"
+        )
+        credits_title.grid(row=0, column=0, sticky="w", padx=28, pady=(24, 24))
+
+        self._add_credit_row(
+            credits_card,
+            row=1,
+            heading="Backend logic developed by",
+            names="Adekola Adeyemi, Justin Smart, Tony Woo, and Jeff Defoe"
+        )
+
+        self._add_credit_row(
+            credits_card,
+            row=2,
+            heading="Software interface designed by",
+            names="Misk Damdoum"
+        )
+
+    def _start_workflow_animation(self):
+        self._animate_workflow_steps()
+
+    def _animate_workflow_steps(self):
+        if not self.workflow_step_cards:
+            return
+
+        for index, step in enumerate(self.workflow_step_cards):
+            self._set_step_active(step, index == self.workflow_animation_index)
+
+        self.workflow_animation_index = (self.workflow_animation_index + 1) % len(self.workflow_step_cards)
+        self.workflow_animation_after_id = self.after(950, self._animate_workflow_steps)
+
+    def _set_step_active(self, step, active):
+        if active:
+            card_bg = "#eef7ff"
+            border_color = MAIN_BLUE
+            title_fg = MAIN_BLUE
+            desc_fg = "#1f2933"
+        else:
+            card_bg = "#fbfdff"
+            border_color = "#c8dcf4"
+            title_fg = MAIN_BLUE
+            desc_fg = "#4d5f73"
+
+        step["card"].configure(
+            bg=card_bg,
+            highlightbackground=border_color,
+            highlightcolor=border_color,
+            highlightthickness=2 if active else 1,
+        )
+        step["badge"].configure(bg=MAIN_BLUE)
+        step["text_block"].configure(bg=card_bg)
+        step["title"].configure(bg=card_bg, fg=title_fg)
+        step["description"].configure(bg=card_bg, fg=desc_fg)
+
+    def _create_card(self, parent):
+        return tk.Frame(
+            parent,
+            bg="white",
+            highlightbackground="#d8e3ef",
+            highlightthickness=1,
+            bd=0
+        )
+
+    def _add_credit_row(self, parent, row, heading, names):
+        container = tk.Frame(parent, bg="white")
+        container.grid(row=row, column=0, sticky="ew", padx=28, pady=(0, 28))
+        container.columnconfigure(0, weight=1)
+
+        heading_label = tk.Label(
+            container,
+            text=heading,
+            font=("Segoe UI", 10, "bold"),
+            fg="#1f2933",
+            bg="white"
+        )
+        heading_label.grid(row=0, column=0, sticky="w")
+
+        names_label = tk.Label(
+            container,
+            text=names,
+            font=("Segoe UI", 10),
+            fg="#4d5f73",
+            bg="white",
+            wraplength=440,
+            justify="left"
+        )
+        names_label.grid(row=1, column=0, sticky="w", pady=(10, 0))
 
 
 class FilesPage(BasePage):
@@ -273,15 +663,14 @@ class BasicSetupPage(BasePage):
         )
 
         fields = [
-            ("Number of blades", self.blades_var, 1, 500, 1),
-            ("Scale (m)", self.scale_var, 0.000001, 1000.0, 0.001),
-            ("Radial points (outside of hub and casing boundary layers)", self.nrad_var, 1, 1000, 1),
+            ("Number of blades", "Nb", self.blades_var, 1, 500, 1),
+            ("Scale (m)", "scale", self.scale_var, 0.000001, 1000.0, 0.001),
+            ("Radial points (outside of hub and casing boundary layers)", "nrad", self.nrad_var, 1, 1000, 1),
         ]
 
-        for row, (label_text, var, min_val, max_val, step) in enumerate(fields, start=1):
-            ttk.Label(content, text=label_text, style="Field.TLabel").grid(
-                row=row, column=0, sticky="w", padx=(0, 24), pady=12
-            )
+        for row, (label_text, key, var, min_val, max_val, step) in enumerate(fields, start=1):
+            label = self._create_parameter_label(content, label_text, key)
+            label.grid(row=row, column=0, sticky="w", padx=(0, 24), pady=12)
 
             spinbox = ttk.Spinbox(
                 content,
@@ -303,9 +692,8 @@ class BasicSetupPage(BasePage):
             spinbox.bind("<KeyRelease>", clear_selection)
             spinbox.bind("<FocusIn>", clear_selection)
 
-        ttk.Label(content, text="Periodic mode", style="Field.TLabel").grid(
-            row=4, column=0, sticky="w", padx=(0, 24), pady=12
-        )
+        periodic_label = self._create_parameter_label(content, "Periodic mode", "periodic")
+        periodic_label.grid(row=4, column=0, sticky="w", padx=(0, 24), pady=12)
 
         ttk.Checkbutton(
             content,
@@ -496,7 +884,7 @@ class BoundaryLayerPage(BasePage):
         ).grid(row=0, column=0, padx=(0, 12))
 
     def _add_numeric_field(self, parent, row, label_col, entry_col, label_text, key, manual=False):
-        label = ttk.Label(parent, text=label_text, style="Field.TLabel")
+        label = self._create_parameter_label(parent, label_text, key)
         label.grid(
             row=row,
             column=label_col,
@@ -894,7 +1282,8 @@ class MeshTuningPage(BasePage):
         ).grid(row=0, column=0)
 
     def _add_spinbox_field(self, parent, row, label_col, entry_col, label_text, key, min_val, max_val, step):
-        ttk.Label(parent, text=label_text, style="Field.TLabel").grid(
+        label = self._create_parameter_label(parent, label_text, key)
+        label.grid(
             row=row,
             column=label_col,
             sticky="w",
@@ -1091,11 +1480,8 @@ class AdvancedPage(BasePage):
         ).grid(row=0, column=0)
 
     def _add_spinbox_field(self, parent, row, label_col, entry_col, label_text, key, min_val, max_val, step):
-        ttk.Label(
-            parent,
-            text=label_text,
-            style="Field.TLabel"
-        ).grid(
+        label = self._create_parameter_label(parent, label_text, key)
+        label.grid(
             row=row,
             column=label_col,
             sticky="w",
@@ -1171,74 +1557,101 @@ class AdvancedPage(BasePage):
 class RunPage(BasePage):
     def __init__(self, parent, app):
         super().__init__(parent, app, title="Run")
-
+        self.process = None
         self.output_queue = queue.Queue()
-        self.is_running = False
-        self.last_config_path = None
+        self.build_page()
+        self.append_console("[Ready] Configure inputs, then run mesh generation.\n")
 
-        self._build_page()
-        self._poll_output_queue()
-
-    def _build_page(self):
+    def build_page(self):
         self.body.columnconfigure(0, weight=1)
-        self.body.rowconfigure(3, weight=1)
+        self.body.rowconfigure(1, weight=1)
 
-        # --------------------------------------------------
-        # Run button area
-        # --------------------------------------------------
-        run_panel = ttk.Frame(self.body, style="Content.TFrame")
-        run_panel.grid(row=0, column=0, sticky="ew", pady=(22, 34))
-        run_panel.columnconfigure(0, weight=1)
-
-        self.run_button = ttk.Button(
-            run_panel,
-            text="▶  Run Mesh Generation",
-            style="Primary.TButton",
-            takefocus=False,
-            command=self.start_mesh_generation,
-        )
-        self.run_button.grid(row=0, column=0)
-
-        # --------------------------------------------------
-        # Separator
-        # --------------------------------------------------
-        ttk.Separator(self.body, orient="horizontal").grid(
-            row=1,
-            column=0,
-            sticky="ew",
-            pady=(0, 26)
-        )
-
-        # --------------------------------------------------
-        # Console title
-        # --------------------------------------------------
-        console_label = ttk.Label(
+        run_card = tk.Frame(
             self.body,
-            text="Console Output",
-            style="Section.TLabel"
+            bg="white",
+            highlightbackground="#d8e3ef",
+            highlightthickness=1,
+            bd=0
         )
-        console_label.grid(row=2, column=0, sticky="w", pady=(0, 12))
+        run_card.grid(row=0, column=0, sticky="ew", pady=(0, 24))
+        run_card.columnconfigure(0, weight=1)
 
-        # --------------------------------------------------
-        # Console output box
-        # --------------------------------------------------
-        console_frame = ttk.Frame(self.body, style="Content.TFrame")
-        console_frame.grid(row=3, column=0, sticky="nsew")
+        run_header = tk.Label(
+            run_card,
+            text="Run Configuration",
+            font=("Segoe UI", 15, "bold"),
+            fg=MAIN_BLUE,
+            bg="white"
+        )
+        run_header.grid(row=0, column=0, sticky="w", padx=24, pady=(18, 4))
+
+        run_description = tk.Label(
+            run_card,
+            text="Start mesh surface generation using the current file paths and parameter settings.",
+            font=("Segoe UI", 10),
+            fg="#4d5f73",
+            bg="white"
+        )
+        run_description.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
+
+        self.run_button = tk.Button(
+            run_card,
+            text="▶  Run Mesh Generation",
+            command=self.run_backend,
+            font=("Segoe UI", 10, "bold"),
+            fg="white",
+            bg=MAIN_BLUE,
+            activeforeground="white",
+            activebackground="#003f73",
+            relief="flat",
+            bd=0,
+            padx=24,
+            pady=10,
+            cursor="hand2"
+        )
+        self.run_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=24, pady=18)
+
+        console_card = tk.Frame(
+            self.body,
+            bg="white",
+            highlightbackground="#d8e3ef",
+            highlightthickness=1,
+            bd=0
+        )
+        console_card.grid(row=1, column=0, sticky="nsew")
+        console_card.columnconfigure(0, weight=1)
+        console_card.rowconfigure(1, weight=1)
+
+        console_header_frame = tk.Frame(console_card, bg="white")
+        console_header_frame.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 10))
+        console_header_frame.columnconfigure(0, weight=1)
+
+        console_title = tk.Label(
+            console_header_frame,
+            text="Console Output",
+            font=("Segoe UI", 14, "bold"),
+            fg=MAIN_BLUE,
+            bg="white"
+        )
+        console_title.grid(row=0, column=0, sticky="w")
+
+        console_frame = tk.Frame(console_card, bg="white")
+        console_frame.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 16))
         console_frame.columnconfigure(0, weight=1)
         console_frame.rowconfigure(0, weight=1)
 
         self.console = tk.Text(
             console_frame,
-            height=14,
+            height=18,
             wrap="word",
             font=("Consolas", 10),
-            bg="white",
-            fg="#1f1f1f",
-            relief="solid",
-            borderwidth=1,
+            bg="#fbfdff",
+            fg="#1f2933",
+            insertbackground=MAIN_BLUE,
+            relief="flat",
+            bd=0,
             padx=14,
-            pady=12,
-            state="disabled"
+            pady=12
         )
         self.console.grid(row=0, column=0, sticky="nsew")
 
@@ -1248,99 +1661,237 @@ class RunPage(BasePage):
             command=self.console.yview
         )
         scrollbar.grid(row=0, column=1, sticky="ns")
-
         self.console.configure(yscrollcommand=scrollbar.set)
 
-        # --------------------------------------------------
-        # Bottom action buttons
-        # --------------------------------------------------
-        action_bar = ttk.Frame(self.body, style="Content.TFrame")
-        action_bar.grid(row=4, column=0, sticky="e", pady=(22, 0))
+        action_frame = tk.Frame(console_card, bg="white")
+        action_frame.grid(row=2, column=0, sticky="e", padx=24, pady=(0, 18))
 
-        ttk.Button(
-            action_bar,
+        clear_button = tk.Button(
+            action_frame,
             text="Clear Console",
-            takefocus=False,
-            command=self.clear_console
-        ).grid(row=0, column=0, padx=(0, 12))
+            command=self.clear_console,
+            font=("Segoe UI", 9),
+            fg=MAIN_BLUE,
+            bg="#eef7ff",
+            activeforeground=MAIN_BLUE,
+            activebackground="#d6ecff",
+            relief="flat",
+            bd=0,
+            padx=16,
+            pady=8,
+            cursor="hand2"
+        )
+        clear_button.grid(row=0, column=0, padx=(0, 10))
 
-        ttk.Button(
-            action_bar,
+        save_button = tk.Button(
+            action_frame,
             text="Save Log",
-            takefocus=False,
-            command=self.save_log
-        ).grid(row=0, column=1)
+            command=self.save_log,
+            font=("Segoe UI", 9),
+            fg=MAIN_BLUE,
+            bg="#eef7ff",
+            activeforeground=MAIN_BLUE,
+            activebackground="#d6ecff",
+            relief="flat",
+            bd=0,
+            padx=16,
+            pady=8,
+            cursor="hand2"
+        )
+        save_button.grid(row=0, column=1)
 
-        self._append_console("[Ready] Configure inputs, then run mesh generation.\n")
+    def append_console(self, text):
+        self.console.insert("end", text)
+        self.console.see("end")
 
-    def start_mesh_generation(self):
-        if self.is_running:
+    def clear_console(self):
+        self.console.delete("1.0", "end")
+
+    def save_log(self):
+        output_path = self.app.state.get("outputPath", "")
+
+        if output_path:
+            initial_dir = output_path
+        else:
+            initial_dir = os.path.dirname(__file__)
+
+        filename = filedialog.asksaveasfilename(
+            title="Save console log",
+            initialdir=initial_dir,
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+
+        if filename:
+            with open(filename, "w", encoding="utf-8") as file:
+                file.write(self.console.get("1.0", "end"))
+
+    def set_running_state(self, is_running):
+        if is_running:
+            self.run_button.configure(
+                text="Running...",
+                state="disabled",
+                fg="white",
+                disabledforeground="white",
+                bg="#7fa6c9"
+            )
+        else:
+            self.run_button.configure(
+                text="▶  Run Mesh Generation",
+                state="normal",
+                fg="white",
+                bg=MAIN_BLUE
+            )
+
+    def _candidate_backend_paths(self):
+        gui_folder = os.path.dirname(os.path.abspath(__file__))
+        project_folder = os.path.abspath(os.path.join(gui_folder, os.pardir))
+        cwd = os.getcwd()
+
+        return [
+            os.path.join(gui_folder, "bladePassageSurfaceGenerator_v2.py"),
+            os.path.join(project_folder, "bladePassageSurfaceGenerator_v2.py"),
+            os.path.join(project_folder, "Python", "bladePassageSurfaceGenerator_v2.py"),
+            os.path.join(cwd, "bladePassageSurfaceGenerator_v2.py"),
+            os.path.join(cwd, "Python", "bladePassageSurfaceGenerator_v2.py"),
+            os.path.join(os.path.abspath(os.path.join(cwd, os.pardir)), "Python", "bladePassageSurfaceGenerator_v2.py"),
+        ]
+
+    def _find_backend_script(self):
+        for candidate in self._candidate_backend_paths():
+            if os.path.exists(candidate):
+                return os.path.abspath(candidate)
+
+        gui_folder = os.path.dirname(os.path.abspath(__file__))
+        project_folder = os.path.abspath(os.path.join(gui_folder, os.pardir))
+        ignored_folders = {".git", "__pycache__", ".venv", "venv", "env"}
+
+        for root, dirs, files in os.walk(project_folder):
+            dirs[:] = [folder for folder in dirs if folder not in ignored_folders]
+            if "bladePassageSurfaceGenerator_v2.py" in files:
+                return os.path.join(root, "bladePassageSurfaceGenerator_v2.py")
+
+        return None
+
+    def _validate_inputs(self):
+        data_path = self.app.state.get("dataPath", "")
+        output_path = self.app.state.get("outputPath", "")
+        hub_file = self.app.state.get("hubFileName", "")
+        casing_file = self.app.state.get("casFileName", "")
+        blade_file = self.app.state.get("bladeCurveFile", "")
+
+        missing = []
+
+        if not data_path:
+            missing.append("Input data folder")
+        if not hub_file:
+            missing.append("Hub curve file")
+        if not casing_file:
+            missing.append("Casing curve file")
+        if not blade_file:
+            missing.append("Blade curve file")
+        if not output_path:
+            missing.append("Output data folder")
+
+        if missing:
+            messagebox.showerror(
+                "Missing Run Inputs",
+                "Please fill in the following fields before running:\n\n" + "\n".join(f"• {item}" for item in missing)
+            )
+            return False
+
+        if not os.path.isdir(data_path):
+            messagebox.showerror("Invalid Input Folder", f"The input data folder does not exist:\n\n{data_path}")
+            return False
+
+        for label, filename in [
+            ("Hub curve file", hub_file),
+            ("Casing curve file", casing_file),
+            ("Blade curve file", blade_file),
+        ]:
+            full_path = os.path.join(data_path, filename)
+            if not os.path.exists(full_path):
+                messagebox.showerror(
+                    "Missing Curve File",
+                    f"{label} was not found in the input data folder:\n\n{full_path}"
+                )
+                return False
+
+        return True
+
+    def _build_run_config(self):
+        config = self.app.state.values.copy()
+
+        output_path = config.get("outputPath", "")
+        if output_path:
+            os.makedirs(output_path, exist_ok=True)
+
+        return config
+
+    def _write_run_config(self, config):
+        output_path = config.get("outputPath", "")
+        config_path = os.path.join(output_path, "apt_grid_run_config.json")
+
+        with open(config_path, "w", encoding="utf-8") as file:
+            json.dump(config, file, indent=4)
+
+        return config_path
+
+    def _print_run_summary(self, config, config_path, backend_script):
+        self.append_console("\n" + "=" * 70 + "\n")
+        self.append_console("[GUI Input Summary]\n")
+        self.append_console("=" * 70 + "\n")
+        self.append_console(f"Config file: {config_path}\n")
+        self.append_console(f"Backend script: {backend_script}\n\n")
+
+        for key, value in config.items():
+            self.append_console(f"{key}: {value}\n")
+
+        self.append_console("=" * 70 + "\n\n")
+
+    def run_backend(self):
+        if self.process is not None and self.process.poll() is None:
+            messagebox.showwarning(
+                "Run Already Active",
+                "A mesh generation run is already active."
+            )
             return
 
-        self.clear_console()
-        self.is_running = True
-        self.run_button.state(["disabled"])
+        if not self._validate_inputs():
+            return
 
-        values = dict(self.app.state.values)
+        backend_script = self._find_backend_script()
+        if backend_script is None:
+            messagebox.showerror(
+                "Backend Not Found",
+                "Could not find bladePassageSurfaceGenerator_v2.py.\n\n"
+                "Expected it in the project folder or the Python folder."
+            )
+            return
 
-        worker = threading.Thread(
-            target=self._run_mesh_generation_worker,
-            args=(values,),
+        try:
+            config = self._build_run_config()
+            config_path = self._write_run_config(config)
+        except Exception as error:
+            messagebox.showerror("Config Error", f"Could not write the run config file:\n\n{error}")
+            return
+
+        self.set_running_state(True)
+        self._print_run_summary(config, config_path, backend_script)
+        self.append_console("[Run Started]\n")
+
+        thread = threading.Thread(
+            target=self._run_backend_thread,
+            args=(backend_script, config_path),
             daemon=True
         )
-        worker.start()
+        thread.start()
 
-    def _run_mesh_generation_worker(self, values):
+        self.after(100, self._process_output_queue)
+
+    def _run_backend_thread(self, backend_script, config_path):
         try:
-            self._queue_line("[Step 1/6] Validating run settings...\n")
-            errors = self._validate_run_settings(values)
-
-            if errors:
-                self._queue_line("[ERROR] Missing required run settings:\n")
-                for error in errors:
-                    self._queue_line(f"  - {error}\n")
-                self._queue_line("\nMesh generation was not started.\n")
-                self.output_queue.put(("done", False))
-                return
-
-            self._queue_line("[OK] Run settings validated successfully.\n\n")
-
-            self._queue_line("[Step 2/6] Preparing output folder...\n")
-            output_path = values.get("outputPath", "")
-            os.makedirs(output_path, exist_ok=True)
-            self._queue_line(f"[OK] Output folder ready: {output_path}\n\n")
-
-            self._queue_line("[Step 3/6] Saving GUI run configuration...\n")
-            config_path = os.path.join(output_path, "apt_grid_run_config.json")
-            with open(config_path, "w", encoding="utf-8") as file:
-                json.dump(values, file, indent=4)
-
-            self.last_config_path = config_path
-            self._queue_line(f"[OK] GUI configuration saved: {config_path}\n\n")
-
-            self._queue_run_input_summary(values)
-            self._queue_line("[Step 4/6] Locating backend mesh generator...\n")
-            backend_script = self._find_backend_script()
-
-            if backend_script is None:
-                self._queue_line("[ERROR] Could not find backend file.\n\n")
-                self._queue_line("The GUI checked these locations:\n")
-                for path in self._candidate_backend_paths():
-                    self._queue_line(f"  - {path}\n")
-
-                self._queue_line(
-                    "\nFix: place bladePassageSurfaceGenerator_v2.py in the main APT-Grid folder, "
-                    "in the Python folder, or in the same folder as this GUI file.\n"
-                )
-                self.output_queue.put(("done", False))
-                return
-
             backend_folder = os.path.dirname(backend_script)
-            self._queue_line(f"[OK] Backend found: {backend_script}\n")
-            self._queue_line(f"[OK] Backend working folder: {backend_folder}\n\n")
-
-            self._queue_line("[Step 5/6] Starting backend process...\n")
-            self._queue_line("--------------------------------------------------\n")
 
             command = [
                 sys.executable,
@@ -1350,7 +1901,9 @@ class RunPage(BasePage):
                 config_path
             ]
 
-            process = subprocess.Popen(
+            self.output_queue.put(f"[Command] {' '.join(command)}\n\n")
+
+            self.process = subprocess.Popen(
                 command,
                 cwd=backend_folder,
                 stdout=subprocess.PIPE,
@@ -1359,219 +1912,42 @@ class RunPage(BasePage):
                 bufsize=1
             )
 
-            if process.stdout is not None:
-                for line in process.stdout:
-                    self._queue_line(line)
+            if self.process.stdout is not None:
+                for line in self.process.stdout:
+                    self.output_queue.put(line)
 
-            return_code = process.wait()
-
-            self._queue_line("--------------------------------------------------\n")
+            return_code = self.process.wait()
 
             if return_code == 0:
-                self._queue_line("[Step 6/6] Mesh generation completed.\n")
-                self._queue_line("[SUCCESS] Mesh generated successfully!\n")
-                self._queue_line(f"Output path: {output_path}\n")
-                self.output_queue.put(("done", True))
+                self.output_queue.put("\n[Run Complete] Mesh surface generation finished successfully.\n")
             else:
-                self._queue_line("[Step 6/6] Mesh generation stopped with an error.\n")
-                self._queue_line(f"[ERROR] Backend returned exit code: {return_code}\n")
-                self.output_queue.put(("done", False))
+                self.output_queue.put(f"\n[Run Failed] Backend exited with code {return_code}.\n")
 
         except Exception as error:
-            self._queue_line("\n[ERROR] Unexpected GUI run error:\n")
-            self._queue_line(f"{error}\n")
-            self.output_queue.put(("done", False))
+            self.output_queue.put(f"\n[Error] {error}\n")
 
-    def _candidate_backend_paths(self):
-        gui_folder = os.path.dirname(os.path.abspath(__file__))
-        project_folder = os.path.dirname(gui_folder)
-        current_working_folder = os.getcwd()
+        finally:
+            self.process = None
+            self.after(0, lambda: self.set_running_state(False))
 
-        candidates = [
-            os.path.join(gui_folder, "bladePassageSurfaceGenerator_v2.py"),
-            os.path.join(project_folder, "bladePassageSurfaceGenerator_v2.py"),
-            os.path.join(project_folder, "Python", "bladePassageSurfaceGenerator_v2.py"),
-            os.path.join(current_working_folder, "bladePassageSurfaceGenerator_v2.py"),
-            os.path.join(current_working_folder, "Python", "bladePassageSurfaceGenerator_v2.py"),
-            os.path.join(current_working_folder, "..", "bladePassageSurfaceGenerator_v2.py"),
-        ]
-
-        cleaned_candidates = []
-        for path in candidates:
-            normalized = os.path.abspath(path)
-            if normalized not in cleaned_candidates:
-                cleaned_candidates.append(normalized)
-
-        return cleaned_candidates
-
-    def _find_backend_script(self):
-        for path in self._candidate_backend_paths():
-            if os.path.exists(path):
-                return path
-
-        gui_folder = os.path.dirname(os.path.abspath(__file__))
-        project_folder = os.path.dirname(gui_folder)
-
-        for root, dirs, files in os.walk(project_folder):
-            dirs[:] = [d for d in dirs if d not in {"__pycache__", ".git", ".venv", "venv", "env"}]
-
-            if "bladePassageSurfaceGenerator_v2.py" in files:
-                return os.path.join(root, "bladePassageSurfaceGenerator_v2.py")
-
-        return None
-    
-    def _queue_run_input_summary(self, values):
-        self._queue_line("[GUI Input Summary]\n")
-        self._queue_line("--------------------------------------------------\n")
-
-        sections = {
-            "Files": [
-                "dataPath",
-                "hubFileName",
-                "casFileName",
-                "bladeCurveFile",
-                "outputPath",
-            ],
-            "Basic Setup": [
-                "Nb",
-                "periodic",
-                "scale",
-                "nrad",
-            ],
-            "Boundary Layer": [
-                "autoBL",
-                "rhoref",
-                "Uref",
-                "LrefHub",
-                "LrefCas",
-                "LrefBla",
-                "muref",
-                "yPlusHub",
-                "yPlusCas",
-                "yPlusBla",
-                "delHub",
-                "delCas",
-                "delBla",
-                "dy1Hub",
-                "dy1Cas",
-                "dy1Bla",
-            ],
-            "Mesh Tuning": [
-                "gRad",
-                "gTan",
-                "additionalTangentialRefine",
-                "dax1primeLE",
-                "rLE",
-                "dax1primeTE",
-                "rTE",
-                "additionalAxialRefine",
-                "rUpFar",
-                "rDnFar",
-            ],
-            "Advanced": [
-                "percentVal",
-                "percentValNonCutLE",
-                "percentValNonCutTE",
-                "angConstraintCurves",
-                "angConstraintOffsets",
-            ],
-        }
-
-        for section_name, keys in sections.items():
-            self._queue_line(f"{section_name}:\n")
-
-            for key in keys:
-                self._queue_line(f"  {key}: {values.get(key)}\n")
-
-            self._queue_line("\n")
-
-        self._queue_line("--------------------------------------------------\n\n")
-
-
-    def _validate_run_settings(self, values):
-        errors = []
-
-        required_fields = [
-            ("Input data folder", "dataPath"),
-            ("Hub curve file", "hubFileName"),
-            ("Casing curve file", "casFileName"),
-            ("Blade curve file", "bladeCurveFile"),
-            ("Output data folder", "outputPath"),
-        ]
-
-        for label, key in required_fields:
-            value = str(values.get(key, "")).strip()
-            if not value:
-                errors.append(f"{label} is missing.")
-
-        output_path = str(values.get("outputPath", "")).strip()
-        if output_path:
-            parent_folder = os.path.dirname(output_path) or output_path
-            if not os.path.exists(parent_folder):
-                errors.append(f"Output folder parent path does not exist: {parent_folder}")
-
-        return errors
-
-    def _queue_line(self, text):
-        self.output_queue.put(("text", text))
-
-    def _poll_output_queue(self):
+    def _process_output_queue(self):
         try:
             while True:
-                item_type, payload = self.output_queue.get_nowait()
-
-                if item_type == "text":
-                    self._append_console(payload)
-
-                elif item_type == "done":
-                    self.is_running = False
-                    self.run_button.state(["!disabled"])
-
-                    if payload:
-                        self._append_console("\n[Ready] Run finished successfully.\n")
-                    else:
-                        self._append_console("\n[Ready] Run finished with errors. Review the console output above.\n")
-
+                text = self.output_queue.get_nowait()
+                self.append_console(text)
         except queue.Empty:
             pass
 
-        self.after(100, self._poll_output_queue)
-
-    def _append_console(self, text):
-        self.console.configure(state="normal")
-        self.console.insert("end", text)
-        self.console.see("end")
-        self.console.configure(state="disabled")
-
-    def clear_console(self):
-        self.console.configure(state="normal")
-        self.console.delete("1.0", "end")
-        self.console.configure(state="disabled")
-
-    def save_log(self):
-        log_text = self.console.get("1.0", "end-1c")
-
-        if not log_text.strip():
-            self._append_console("[Info] Console is empty. Nothing to save.\n")
-            return
-
-        default_name = "apt_grid_log_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".txt"
-
-        selected_path = filedialog.asksaveasfilename(
-            title="Save console log",
-            defaultextension=".txt",
-            initialfile=default_name,
-            filetypes=[
-                ("Text files", "*.txt"),
-                ("All files", "*.*"),
-            ]
-        )
-
-        if selected_path:
-            with open(selected_path, "w", encoding="utf-8") as file:
-                file.write(log_text)
-
-            self._append_console(f"\n[Info] Log saved to: {selected_path}\n")
+        if self.process is not None:
+            self.after(100, self._process_output_queue)
+        else:
+            # One extra drain after the process finishes.
+            try:
+                while True:
+                    text = self.output_queue.get_nowait()
+                    self.append_console(text)
+            except queue.Empty:
+                pass
 
 
 
@@ -1775,16 +2151,24 @@ class AptGridApp(tk.Tk):
                 self.floating_logo_1 = tk.PhotoImage(file=first_logo_path)
                 self.floating_logo_1 = self.floating_logo_1.subsample(6, 6)
 
-                tk.Label(
+                logo_1_label = tk.Label(
                     self,
                     image=self.floating_logo_1,
                     bg=CONTENT_BG,
-                    borderwidth=0
-                ).place(
+                    borderwidth=0,
+                    cursor="hand2"
+                )
+                logo_1_label.place(
                     relx=1.0,
                     x=-260,
                     y=26,
                     anchor="ne"
+                )
+                logo_1_label.bind(
+                    "<Button-1>",
+                    lambda event: webbrowser.open(
+                        "https://www.uwindsor.ca/engineering/research/408/turbomachinery-and-unsteady-flows-research-lab"
+                    )
                 )
 
             except Exception as e:
@@ -1795,16 +2179,22 @@ class AptGridApp(tk.Tk):
                 self.floating_logo_2 = tk.PhotoImage(file=second_logo_path)
                 self.floating_logo_2 = self.floating_logo_2.subsample(3, 3)
 
-                tk.Label(
+                logo_2_label = tk.Label(
                     self,
                     image=self.floating_logo_2,
                     bg=CONTENT_BG,
-                    borderwidth=0
-                ).place(
+                    borderwidth=0,
+                    cursor="hand2"
+                )
+                logo_2_label.place(
                     relx=1.0,
                     x=-30,
                     y=10,
                     anchor="ne"
+                )
+                logo_2_label.bind(
+                    "<Button-1>",
+                    lambda event: webbrowser.open("https://www.uwindsor.ca/")
                 )
 
             except Exception as e:
@@ -1908,10 +2298,13 @@ class AptGridApp(tk.Tk):
             "About APT-Grid Interface",
             (
                 "APT-Grid Interface\n\n"
-                "Graphical interface for configuring and running the "
-                "APT-Grid blade passage grid-generation workflow.\n\n"
-                "Backend: TUFRG APT-Grid\n"
-                "GUI: Misk Damdoum"
+                "This graphical interface supports the APT-Grid blade passage "
+                "grid-generation workflow by providing a guided environment for "
+                "selecting geometry files, configuring mesh parameters, and "
+                "launching the backend generation process.\n\n"
+                "Developed for the TUFRG research team at the University of Windsor.\n\n"
+                "For any inquiries, please contact:\n"
+                "jdefoe@uwindsor.ca"
             )
         )
 
