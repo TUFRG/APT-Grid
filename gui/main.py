@@ -309,9 +309,7 @@ class HomePage(BasePage):
         self.body.rowconfigure(2, weight=1)
         self.body.rowconfigure(3, weight=0)
 
-        # --------------------------------------------------
-        # Hero section: icon, name, animated pitch, single CTA
-        # --------------------------------------------------
+       
         hero = tk.Frame(self.body, bg=CONTENT_BG)
         hero.grid(row=0, column=0, sticky="ew", pady=(6, 46))
         hero.columnconfigure(0, weight=1)
@@ -378,10 +376,7 @@ class HomePage(BasePage):
         )
         start_button.grid(row=3, column=0)
 
-        # --------------------------------------------------
-        # Workflow strip: four steps connected by a light line.
-        # The icons are shown without border boxes.
-        # --------------------------------------------------
+       
         steps_section = tk.Frame(self.body, bg=CONTENT_BG)
         steps_section.grid(row=1, column=0, sticky="ew", padx=60, pady=(40, 30))
         steps_section.columnconfigure(0, weight=1)
@@ -512,7 +507,6 @@ class HomePage(BasePage):
 
     def _draw_hero_badge(self, canvas):
         self.app._draw_rounded_rect(canvas, 2, 2, 94, 94, radius=24, fill=MAIN_BLUE)
-        # fallback mesh glyph if icons/gui_logo.png is not available
         offset = 22
         step = 17
         for i in range(3):
@@ -596,11 +590,9 @@ class FilesPage(BasePage):
                 selected_folder = os.path.dirname(selected_path)
                 selected_filename = os.path.basename(selected_path)
 
-                # Store only the file name because the backend uses dataPath + fileName.
+                # store only file name bc the backend uses dataPath + fileName
                 self.file_vars[key].set(selected_filename)
 
-                # If the user selects one of the input curve files, automatically
-                # set Input data to that file's folder.
                 if key in ["hubFileName", "casFileName", "bladeCurveFile"]:
                     self.file_vars["dataPath"].set(selected_folder)
 
@@ -1355,9 +1347,6 @@ class AdvancedPage(BasePage):
         content.columnconfigure(1, weight=1)
         content.columnconfigure(3, weight=1)
 
-        # --------------------------------------------------
-        # Blade cut / arclength controls
-        # --------------------------------------------------
         ttk.Label(
             content,
             text="Blade Cut / Arclength Controls",
@@ -1391,9 +1380,7 @@ class AdvancedPage(BasePage):
                 step=step,
             )
 
-        # --------------------------------------------------
-        # Angle constraint controls
-        # --------------------------------------------------
+        
         angle_start_row = 5
 
         ttk.Separator(content, orient="horizontal").grid(
@@ -1436,9 +1423,7 @@ class AdvancedPage(BasePage):
                 step=step,
             )
 
-        # --------------------------------------------------
-        # Clear All button on the actual right side of page
-        # --------------------------------------------------
+      
         action_bar = ttk.Frame(self.body, style="Content.TFrame")
         action_bar.grid(
             row=1,
@@ -1992,9 +1977,6 @@ class RunPage(BasePage):
         ])
 
     def _wsl_single_passage_shell_command(self, source_passage_meshes_folder, source_output_folder, passage_name="passage0"):
-        # Use a real multi-line shell script instead of one long command joined by &&.
-        # This prevents an earlier failed cd/cp from being hidden by "|| true" and
-        # accidentally running blockMesh from the original Windows-mounted folder.
         source_passage_meshes_folder = source_passage_meshes_folder.replace("\\", "/")
         source_output_folder = source_output_folder.replace("\\", "/")
         safe_passage_name = str(passage_name).replace("'", "")
@@ -2088,11 +2070,9 @@ blockMesh
 CHECKMESH_STATUS=0
 checkMesh || CHECKMESH_STATUS=$?
 
-# Save the finished OpenFOAM mesh back to the original APT-Grid folder,
-# matching the original/manual workflow output location:
+# Save the finished OpenFOAM mesh back to the original folder,
+# matching the original workflow output location:
 # APT-Grid/passageMeshes/passage0/constant/polyMesh
-# Important: copy files manually with cat instead of cp -a/cp -R so WSL does
-# not try to preserve Linux permissions/timestamps on the Windows drive.
 DEST_CASE="$SRC_PASSAGE_MESHES/$PASSAGE_NAME"
 SRC_CASE="$GW_RUN_ROOT/passageMeshes/$PASSAGE_NAME"
 DEST_POLYMESH="$DEST_CASE/constant/polyMesh"
@@ -2115,7 +2095,6 @@ copy_plain_tree() {{
     done
 }}
 
-# Keep the useful case pieces, but skip OpenFOAM dynamicCode build artifacts.
 copy_plain_tree "$SRC_CASE/constant/polyMesh" "$DEST_CASE/constant/polyMesh"
 copy_plain_tree "$SRC_CASE/constant/geometry" "$DEST_CASE/constant/geometry"
 copy_plain_tree "$SRC_CASE/system" "$DEST_CASE/system"
@@ -2128,14 +2107,12 @@ exit 0
 """.strip()
 
     def _wsl_multipassage_shell_command(self, source_passage_meshes_folder, source_output_folder):
-        # Stage everything inside Linux first, then run the existing two-passage script.
+        # stage everything inside Linux first, then run the existing two-passage script
         source_passage_meshes_folder = source_passage_meshes_folder.replace("\\", "/")
         source_output_folder = source_output_folder.replace("\\", "/")
 
         return rf"""
-# This script is written to a real .sh file and then executed by WSL.
-# That avoids bash -c quoting/variable-expansion problems from Windows.
-# Use a GridWorks-specific variable name to avoid any OpenFOAM/internal conflicts.
+
 if ! command -v blockMesh >/dev/null 2>&1; then
     if [ -f "$HOME/.bashrc" ]; then
         . "$HOME/.bashrc" || true
@@ -2186,9 +2163,7 @@ unset FOAM_CASE
 MESH_STATUS=0
 bash multipassagetest.sh || MESH_STATUS=$?
 
-# Save generated OpenFOAM passage cases back to the original APT-Grid folder.
-# Important: copy files manually with cat instead of cp -a/cp -R so Linux/WSL does
-# not try to preserve Linux permissions/timestamps on filesystems that may not support them.
+# Save generated OpenFOAM passage cases back to the original folder
 copy_plain_tree() {{
     SRC_DIR="$1"
     DST_DIR="$2"
@@ -2276,7 +2251,7 @@ exit 0
 
             return None, working_folder, bash_script
 
-        # Native Linux/macOS path: run OpenFOAM directly with bash, no WSL path conversion.
+        # if native linux/macOS path: run OpenFOAM directly with bash, no WSL path conversion
         shell_command = self._wsl_multipassage_shell_command(
             working_folder.replace("\\", "/"),
             self._get_output_data_folder().replace("\\", "/")
@@ -2344,7 +2319,6 @@ exit 0
 
             return None, working_folder
 
-        # Native Linux/macOS path: run OpenFOAM directly with bash, no WSL path conversion.
         shell_command = self._wsl_single_passage_shell_command(
             working_folder.replace("\\", "/"),
             self._get_output_data_folder().replace("\\", "/"),
