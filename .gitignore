@@ -2,3 +2,12 @@
 output/
 
 output/
+
+# Python generated files
+__pycache__/
+*.pyc
+
+# GridWorks generated output
+outputData/
+passageMeshes/passage0/
+passageMeshes/passage1/

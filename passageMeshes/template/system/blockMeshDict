@@ -360,27 +360,27 @@ casOn (148.11783613763515 -7.980365522753424 55.58556856501264) ;
 	// (not a function of circumferential position,
 	// so 8 edge sets needed, each used 2 times)
 	// 4 segments to allow interior grading using nGrad parameter
-radgradingI ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanI-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanI-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
-radgradingK ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanK-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanK-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
-radgradingL ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanL-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanL-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
-radgradingM ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanM-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanM-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
-radgradingP ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanP-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanP-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
-radgradingT ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanT-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanT-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
-radgradingU ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanU-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanU-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
-radgradingO ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanO-$delHub-$delCas)} #eval{0.5*$nrad} $gRad) (#eval{0.5*($spanO-$delHub-$delCas)} #eval{0.5*$nrad} #eval{1.0/$gRad}) ($delCas $nBLcellsCas #eval{1/$gBLcas});
+radgradingI ($delHub $nBLcellsHub $gBLhub) (#calc "0.5*($spanI-$delHub-$delCas)" #calc "0.5*$nrad" $gRad) (#calc "0.5*($spanI-$delHub-$delCas)" #calc "0.5*$nrad" #calc "1.0/$gRad") ($delCas $nBLcellsCas #calc "1/$gBLcas");
+radgradingK ($delHub $nBLcellsHub $gBLhub) (#calc "0.5*($spanK-$delHub-$delCas)" #calc "0.5*$nrad" $gRad) (#calc "0.5*($spanK-$delHub-$delCas)" #calc "0.5*$nrad" #calc "1.0/$gRad") ($delCas $nBLcellsCas #calc "1/$gBLcas");
+radgradingL ($delHub $nBLcellsHub $gBLhub) (#calc "0.5*($spanL-$delHub-$delCas)" #calc "0.5*$nrad" $gRad) (#calc "0.5*($spanL-$delHub-$delCas)" #calc "0.5*$nrad" #calc "1.0/$gRad") ($delCas $nBLcellsCas #calc "1/$gBLcas");
+radgradingM ($delHub $nBLcellsHub $gBLhub) (#calc "0.5*($spanM-$delHub-$delCas)" #calc "0.5*$nrad" $gRad) (#calc "0.5*($spanM-$delHub-$delCas)" #calc "0.5*$nrad" #calc "1.0/$gRad") ($delCas $nBLcellsCas #calc "1/$gBLcas");
+radgradingP ($delHub $nBLcellsHub $gBLhub) (#calc "0.5*($spanP-$delHub-$delCas)" #calc "0.5*$nrad" $gRad) (#calc "0.5*($spanP-$delHub-$delCas)" #calc "0.5*$nrad" #calc "1.0/$gRad") ($delCas $nBLcellsCas #calc "1/$gBLcas");
+radgradingT ($delHub $nBLcellsHub $gBLhub) (#calc "0.5*($spanT-$delHub-$delCas)" #calc "0.5*$nrad" $gRad) (#calc "0.5*($spanT-$delHub-$delCas)" #calc "0.5*$nrad" #calc "1.0/$gRad") ($delCas $nBLcellsCas #calc "1/$gBLcas");
+radgradingU ($delHub $nBLcellsHub $gBLhub) (#calc "0.5*($spanU-$delHub-$delCas)" #calc "0.5*$nrad" $gRad) (#calc "0.5*($spanU-$delHub-$delCas)" #calc "0.5*$nrad" #calc "1.0/$gRad") ($delCas $nBLcellsCas #calc "1/$gBLcas");
+radgradingO ($delHub $nBLcellsHub $gBLhub) (#calc "0.5*($spanO-$delHub-$delCas)" #calc "0.5*$nrad" $gRad) (#calc "0.5*($spanO-$delHub-$delCas)" #calc "0.5*$nrad" #calc "1.0/$gRad") ($delCas $nBLcellsCas #calc "1/$gBLcas");
 
 // Tangential grading
 	// Simpler, just 2 segments to allow symmetric variation in cell sizes
 	// (7 edges needed: I(hub/cas)/L/M/T/O(hub/cas))
 	// Move toward uniform spacing at I and O, but some constraint based
 	// on length imposed.
-tangradingIhub (0.5 0.5 $gTanIhub) (0.5 0.5 #eval{1/$gTanIhub});
-tangradingIcas (0.5 0.5 $gTanIcas) (0.5 0.5 #eval{1/$gTanIcas});
-tangradingL (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
-tangradingM (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
-tangradingT (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
-tangradingOhub (0.5 0.5 $gTanOhub) (0.5 0.5 #eval{1/$gTanOhub});
-tangradingOcas (0.5 0.5 $gTanOcas) (0.5 0.5 #eval{1/$gTanOcas});
+tangradingIhub (0.5 0.5 $gTanIhub) (0.5 0.5 #calc "1/$gTanIhub");
+tangradingIcas (0.5 0.5 $gTanIcas) (0.5 0.5 #calc "1/$gTanIcas");
+tangradingL (0.5 0.5 $gTan) (0.5 0.5 #calc "1/$gTan");
+tangradingM (0.5 0.5 $gTan) (0.5 0.5 #calc "1/$gTan");
+tangradingT (0.5 0.5 $gTan) (0.5 0.5 #calc "1/$gTan");
+tangradingOhub (0.5 0.5 $gTanOhub) (0.5 0.5 #calc "1/$gTanOhub");
+tangradingOcas (0.5 0.5 $gTanOcas) (0.5 0.5 #calc "1/$gTanOcas");
 
 // Axial grading
 	// 2 segments per block edge, but each one must be computed individually.
@@ -389,25 +389,25 @@ tangradingOcas (0.5 0.5 $gTanOcas) (0.5 0.5 #eval{1/$gTanOcas});
 	//
 	// For blocks 2 and 3, the values are used for both "axial" edges of the
 	// blade BL blocks (the ones along the blade surface and the ones on the offset)
-axgrading1HP (#eval{max($L1HP-0.5*$cHP,0)} #eval{1-$f1HPclo} $g1HPfar) (#eval{0.5*$cHP} $f1HPclo $g1HPclo);
-axgrading1HN (#eval{max($L1HN-0.5*$cHN,0)} #eval{1-$f1HNclo} $g1HNfar) (#eval{0.5*$cHN} $f1HNclo $g1HNclo);
-axgrading1CP (#eval{max($L1CP-0.5*$cCP,0)} #eval{1-$f1CPclo} $g1CPfar) (#eval{0.5*$cCP} $f1CPclo $g1CPclo);
-axgrading1CN (#eval{max($L1CN-0.5*$cCN,0)} #eval{1-$f1CNclo} $g1CNfar) (#eval{0.5*$cCN} $f1CNclo $g1CNclo);
+axgrading1HP (#calc "max($L1HP-0.5*$cHP,0)" #calc "1-$f1HPclo" $g1HPfar) (#calc "0.5*$cHP" $f1HPclo $g1HPclo);
+axgrading1HN (#calc "max($L1HN-0.5*$cHN,0)" #calc "1-$f1HNclo" $g1HNfar) (#calc "0.5*$cHN" $f1HNclo $g1HNclo);
+axgrading1CP (#calc "max($L1CP-0.5*$cCP,0)" #calc "1-$f1CPclo" $g1CPfar) (#calc "0.5*$cCP" $f1CPclo $g1CPclo);
+axgrading1CN (#calc "max($L1CN-0.5*$cCN,0)" #calc "1-$f1CNclo" $g1CNfar) (#calc "0.5*$cCN" $f1CNclo $g1CNclo);
 
-axgrading2HP (0.25 $fLEHP $gLEHP) (0.75 #eval{1-$fLEHP} $gM1HP);
-axgrading2HN (0.25 $fLEHN $gLEHN) (0.75 #eval{1-$fLEHN} $gM1HN);
-axgrading2CP (0.25 $fLECP $gLECP) (0.75 #eval{1-$fLECP} $gM1CP);
-axgrading2CN (0.25 $fLECN $gLECN) (0.75 #eval{1-$fLECN} $gM1CN);
+axgrading2HP (0.25 $fLEHP $gLEHP) (0.75 #calc "1-$fLEHP" $gM1HP);
+axgrading2HN (0.25 $fLEHN $gLEHN) (0.75 #calc "1-$fLEHN" $gM1HN);
+axgrading2CP (0.25 $fLECP $gLECP) (0.75 #calc "1-$fLECP" $gM1CP);
+axgrading2CN (0.25 $fLECN $gLECN) (0.75 #calc "1-$fLECN" $gM1CN);
 
-axgrading3HP (0.75 #eval{1-$fTEHP} $gM2HP) (0.25 $fTEHP $gTEHP);
-axgrading3HN (0.75 #eval{1-$fTEHN} $gM2HN) (0.25 $fTEHN $gTEHN);
-axgrading3CP (0.75 #eval{1-$fTECP} $gM2CP) (0.25 $fTECP $gTECP);
-axgrading3CN (0.75 #eval{1-$fTECN} $gM2CN) (0.25 $fTECN $gTECN);
+axgrading3HP (0.75 #calc "1-$fTEHP" $gM2HP) (0.25 $fTEHP $gTEHP);
+axgrading3HN (0.75 #calc "1-$fTEHN" $gM2HN) (0.25 $fTEHN $gTEHN);
+axgrading3CP (0.75 #calc "1-$fTECP" $gM2CP) (0.25 $fTECP $gTECP);
+axgrading3CN (0.75 #calc "1-$fTECN" $gM2CN) (0.25 $fTECN $gTECN);
 
-axgrading4HP (#eval{0.5*$cHP} $f4HPclo $g4HPclo) (#eval{max($L4HP-0.5*$cHP,0)} #eval{1-$f4HPclo} $g4HPfar); 
-axgrading4HN (#eval{0.5*$cHN} $f4HNclo $g4HNclo) (#eval{max($L4HN-0.5*$cHN,0)} #eval{1-$f4HNclo} $g4HNfar); 
-axgrading4CP (#eval{0.5*$cCP} $f4CPclo $g4CPclo) (#eval{max($L4CP-0.5*$cCP,0)} #eval{1-$f4CPclo} $g4CPfar); 
-axgrading4CN (#eval{0.5*$cCN} $f4CNclo $g4CNclo) (#eval{max($L4CN-0.5*$cCN,0)} #eval{1-$f4CNclo} $g4CNfar); 
+axgrading4HP (#calc "0.5*$cHP" $f4HPclo $g4HPclo) (#calc "max($L4HP-0.5*$cHP,0)" #calc "1-$f4HPclo" $g4HPfar); 
+axgrading4HN (#calc "0.5*$cHN" $f4HNclo $g4HNclo) (#calc "max($L4HN-0.5*$cHN,0)" #calc "1-$f4HNclo" $g4HNfar); 
+axgrading4CP (#calc "0.5*$cCP" $f4CPclo $g4CPclo) (#calc "max($L4CP-0.5*$cCP,0)" #calc "1-$f4CPclo" $g4CPfar); 
+axgrading4CN (#calc "0.5*$cCN" $f4CNclo $g4CNclo) (#calc "max($L4CN-0.5*$cCN,0)" #calc "1-$f4CNclo" $g4CNfar); 
 
 geometry
 {
@@ -681,7 +681,7 @@ vertices
 blocks
 (
     hex (vINH vIPH vKPH vKNH vINC vIPC vKPC vKNC) // upstream block
-    ($ntan $nax1 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+    ($ntan $nax1 #calc "$nrad+$nBLcellsHub+$nBLcellsCas")
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
@@ -700,7 +700,7 @@ blocks
 	)
 
     hex (vKNH vKPH vPPH vPNH vKNC vKPC vPPC vPNC) // first outer around-blade block
-    ($ntan $nax2 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+    ($ntan $nax2 #calc "$nrad+$nBLcellsHub+$nBLcellsCas")
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
@@ -719,14 +719,14 @@ blocks
 	)
 
 	hex (vKPH vLPH vMPH vPPH vKPC vLPC vMPC vPPC) // first blade BL block on max Q side
-	($nBLcellsBlade $nax2 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+	($nBLcellsBlade $nax2 #calc "$nrad+$nBLcellsHub+$nBLcellsCas")
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
-		(#eval{1/$gBLbla})
-		(#eval{1/$gBLbla})
-		(#eval{1/$gBLbla})
-		(#eval{1/$gBLbla})
+		(#calc "1/$gBLbla")
+		(#calc "1/$gBLbla")
+		(#calc "1/$gBLbla")
+		(#calc "1/$gBLbla")
         ($axgrading2HPoffset)
 		($axgrading2HP)
 		($axgrading2CP)
@@ -738,7 +738,7 @@ blocks
 	)
 
 	hex (vLNH vKNH vPNH vMNH vLNC vKNC vPNC vMNC) // first blade BL block on min Q side
-	($nBLcellsBlade $nax2 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+	($nBLcellsBlade $nax2 #calc "$nrad+$nBLcellsHub+$nBLcellsCas")
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
@@ -757,7 +757,7 @@ blocks
 	)
 
     hex (vPNH vPPH vUPH vUNH vPNC vPPC vUPC vUNC) // second outer around-blade block
-    ($ntan $nax3 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+    ($ntan $nax3 #calc "$nrad+$nBLcellsHub+$nBLcellsCas")
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
@@ -776,14 +776,14 @@ blocks
 	)
 
 	hex (vPPH vMPH vTPH vUPH vPPC vMPC vTPC vUPC) // second blade BL block on max Q side
-	($nBLcellsBlade $nax3 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+	($nBLcellsBlade $nax3 #calc "$nrad+$nBLcellsHub+$nBLcellsCas")
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
-		(#eval{1/$gBLbla})
-		(#eval{1/$gBLbla})
-		(#eval{1/$gBLbla})
-		(#eval{1/$gBLbla})
+		(#calc "1/$gBLbla")
+		(#calc "1/$gBLbla")
+		(#calc "1/$gBLbla")
+		(#calc "1/$gBLbla")
         ($axgrading3HPoffset)
 		($axgrading3HP)
 		($axgrading3CP)
@@ -798,7 +798,7 @@ blocks
 	// x2 = axial (z) dir
 	// x3 = radial dir
 	hex (vMNH vPNH vUNH vTNH vMNC vPNC vUNC vTNC) // second blade BL block on min Q side
-	($nBLcellsBlade $nax3 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+	($nBLcellsBlade $nax3 #calc "$nrad+$nBLcellsHub+$nBLcellsCas")
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
@@ -817,7 +817,7 @@ blocks
 	)
 
     hex (vUNH vUPH vOPH vONH vUNC vUPC vOPC vONC) // downstream block
-    ($ntan $nax4 #eval{$nrad+$nBLcellsHub+$nBLcellsCas})
+    ($ntan $nax4 #calc "$nrad+$nBLcellsHub+$nBLcellsCas")
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(

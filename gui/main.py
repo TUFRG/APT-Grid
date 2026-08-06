@@ -3,6 +3,7 @@ import json
 import os
 import queue
 import subprocess
+import shutil
 import sys
 import threading
 import tkinter as tk
@@ -11,7 +12,7 @@ from datetime import datetime
 from tkinter import filedialog, ttk, messagebox
 
 
-APP_TITLE = "APT-Grid Interface"
+APP_TITLE = "GridWorks"
 WINDOW_SIZE = "1280x800"
 SIDEBAR_WIDTH = 126
 LOGO_FILENAME = "logo.png"
@@ -256,8 +257,8 @@ class BasePage(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
-        title_label = ttk.Label(self, text=title, style="PageTitle.TLabel")
-        title_label.grid(row=0, column=0, sticky="w")
+        self.title_label = ttk.Label(self, text=title, style="PageTitle.TLabel")
+        self.title_label.grid(row=0, column=0, sticky="w")
 
         self.body = ttk.Frame(self, padding=(0, 24, 0, 0), style="Content.TFrame")
         self.body.grid(row=1, column=0, sticky="nsew")
@@ -290,59 +291,80 @@ class BasePage(ttk.Frame):
 
 class HomePage(BasePage):
     def __init__(self, parent, app):
-        super().__init__(parent, app, title="APT-Grid Interface")
-
-        self.workflow_step_cards = []
-        self.workflow_animation_index = 0
-        self.workflow_animation_after_id = None
-
+        super().__init__(parent, app, title="Home")
+        self.title_label.grid_remove()
+        self._step_icons = []
+        self.hero_icon_image = None
+        self.tagline_full_text = "Guided mesh generation for blade passages."
+        self.tagline_animation_index = 0
+        self.tagline_after_id = None
         self._build_page()
-        self._start_workflow_animation()
 
     def _build_page(self):
         self.body.columnconfigure(0, weight=1)
-        self.body.configure(padding=(0, 50, 0, 0))
+        self.body.configure(padding=(0, 30, 0, 14))
 
         self.body.rowconfigure(0, weight=0)
         self.body.rowconfigure(1, weight=0)
+        self.body.rowconfigure(2, weight=1)
+        self.body.rowconfigure(3, weight=0)
 
         # --------------------------------------------------
-        # Welcome / overview card
+        # Hero section: icon, name, animated pitch, single CTA
         # --------------------------------------------------
-        overview_card = self._create_card(self.body)
-        overview_card.grid(row=0, column=0, sticky="ew", pady=(0, 32))
-        overview_card.columnconfigure(0, weight=1)
-        overview_card.columnconfigure(1, weight=0)
+        hero = tk.Frame(self.body, bg=CONTENT_BG)
+        hero.grid(row=0, column=0, sticky="ew", pady=(6, 46))
+        hero.columnconfigure(0, weight=1)
 
-        overview_title = tk.Label(
-            overview_card,
-            text="Welcome",
-            font=("Segoe UI", 16, "bold"),
+        hero_icon = self._load_hero_icon()
+        if hero_icon is not None:
+            self.hero_icon_image = hero_icon
+            icon_label = tk.Label(hero, image=self.hero_icon_image, bg=CONTENT_BG, bd=0)
+            icon_label.grid(row=0, column=0, pady=(62, 2))
+        else:
+            badge = tk.Canvas(
+                hero, width=96, height=96, bg=CONTENT_BG,
+                highlightthickness=0, bd=0
+            )
+            badge.grid(row=0, column=0, pady=(62, 2))
+            self._draw_hero_badge(badge)
+
+        title_frame = tk.Frame(hero, bg=CONTENT_BG, width=430, height=106)
+        title_frame.grid(row=1, column=0)
+        title_frame.grid_propagate(False)
+
+        name_label = tk.Label(
+            title_frame,
+            text="GridWorks",
+            font=("Segoe UI", 30, "bold"),
             fg=MAIN_BLUE,
-            bg="white"
+            bg=CONTENT_BG
         )
-        overview_title.grid(row=0, column=0, sticky="w", padx=28, pady=(22, 8))
+        name_label.place(relx=0.5, y=0, anchor="n")
 
-        overview_text = tk.Label(
-            overview_card,
-            text=(
-                "APT-Grid Interface provides a guided setup environment for selecting geometry files, "
-                "configuring blade passage parameters, defining boundary-layer and mesh controls, "
-                "and launching the backend surface-generation process."
-            ),
-            font=("Segoe UI", 10),
-            fg="#1f2933",
-            bg="white",
-            wraplength=1160,
-            justify="left"
+        powered_label = tk.Label(
+            title_frame,
+            text="powered by TUFRG",
+            font=("Segoe UI", 11, "italic"),
+            fg="#5f7ea8",
+            bg=CONTENT_BG
         )
-        overview_text.grid(row=1, column=0, sticky="w", padx=28, pady=(0, 24))
+        powered_label.place(x=268, y=64, anchor="nw")
+
+        self.tagline_label = tk.Label(
+            hero,
+            text="",
+            font=("Segoe UI", 12),
+            fg="#5f7ea8",
+            bg=CONTENT_BG
+        )
+        self.tagline_label.grid(row=2, column=0, pady=(6, 58))
 
         start_button = tk.Button(
-            overview_card,
+            hero,
             text="Start New Project",
             command=lambda: self.app.show_page("Files"),
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 11, "bold"),
             fg="white",
             bg=MAIN_BLUE,
             activeforeground="white",
@@ -350,210 +372,164 @@ class HomePage(BasePage):
             disabledforeground="white",
             relief="flat",
             bd=0,
-            padx=22,
-            pady=9,
+            padx=30,
+            pady=11,
             cursor="hand2"
         )
-        start_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 28), pady=24)
+        start_button.grid(row=3, column=0)
 
         # --------------------------------------------------
-        # Lower layout: workflow left, credits right
+        # Workflow strip: four steps connected by a light line.
+        # The icons are shown without border boxes.
         # --------------------------------------------------
-        lower_grid = tk.Frame(self.body, bg=CONTENT_BG)
-        lower_grid.grid(row=1, column=0, sticky="ew")
-        lower_grid.columnconfigure(0, weight=7)
-        lower_grid.columnconfigure(1, weight=5)
+        steps_section = tk.Frame(self.body, bg=CONTENT_BG)
+        steps_section.grid(row=1, column=0, sticky="ew", padx=60, pady=(40, 30))
+        steps_section.columnconfigure(0, weight=1)
 
-        workflow_card = self._create_card(lower_grid)
-        workflow_card.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
-        workflow_card.columnconfigure(0, weight=1)
-
-        workflow_title = tk.Label(
-            workflow_card,
-            text="Workflow Overview",
-            font=("Segoe UI", 16, "bold"),
-            fg=MAIN_BLUE,
-            bg="white"
+        steps_heading = tk.Label(
+            steps_section,
+            text="How it works",
+            font=("Segoe UI", 11, "bold"),
+            fg="#5f7ea8",
+            bg=CONTENT_BG
         )
-        workflow_title.grid(row=0, column=0, sticky="w", padx=28, pady=(24, 18))
+        steps_heading.grid(row=0, column=0, pady=(0, 18))
+
+        steps_row = tk.Frame(steps_section, bg=CONTENT_BG)
+        steps_row.grid(row=1, column=0, sticky="ew", pady=(58, 0))
 
         workflow_steps = [
-            ("01", "Files", "Select geometry files and output path."),
-            ("02", "Setup", "Define blade count, scale, and resolution."),
-            ("03", "Mesh Controls", "Configure boundary layer, mesh tuning, and advanced settings."),
-            ("04", "Run", "Write the configuration file and launch the backend generator."),
+            ("1", "Files", "folder.png"),
+            ("2", "Setup", "grid.png"),
+            ("3", "Mesh Controls", "tuning.png"),
+            ("4", "Run", "run.png"),
         ]
+        num_steps = len(workflow_steps)
 
-        diagram_frame = tk.Frame(workflow_card, bg="white")
-        diagram_frame.grid(row=1, column=0, sticky="ew", padx=28, pady=(0, 26))
-        diagram_frame.columnconfigure(0, weight=1)
+        for col in range(num_steps):
+            steps_row.columnconfigure(col, weight=1, uniform="step")
 
-        for index, (number, title, description) in enumerate(workflow_steps):
-            step_card = tk.Frame(
-                diagram_frame,
-                bg="#fbfdff",
-                highlightbackground="#c8dcf4",
-                highlightthickness=1,
-                bd=0,
-                height=76
-            )
-            step_card.grid(row=index * 2, column=0, sticky="ew")
-            step_card.grid_propagate(False)
-            step_card.columnconfigure(0, weight=0)
-            step_card.columnconfigure(1, weight=1)
-            step_card.rowconfigure(0, weight=1)
+        connector = tk.Canvas(
+            steps_row, height=60, bg=CONTENT_BG, highlightthickness=0, bd=0
+        )
+        connector.grid(row=0, column=0, columnspan=num_steps, sticky="new")
 
-            badge = tk.Label(
-                step_card,
-                text=number,
-                font=("Segoe UI", 9, "bold"),
-                fg="white",
-                bg=MAIN_BLUE,
-                width=4,
-                height=1
-            )
-            badge.grid(row=0, column=0, sticky="nsw", padx=(18, 16))
+        def _redraw_connector(event, canvas=connector):
+            canvas.delete("line")
+            if num_steps <= 1:
+                return
 
-            text_block = tk.Frame(step_card, bg="#fbfdff")
-            text_block.grid(row=0, column=1, sticky="w", padx=(0, 18))
+            step_width = event.width / num_steps
+            icon_gap = 48
 
-            step_title = tk.Label(
-                text_block,
-                text=title,
-                font=("Segoe UI", 10, "bold"),
-                fg=MAIN_BLUE,
-                bg="#fbfdff",
-                anchor="w"
-            )
-            step_title.grid(row=0, column=0, sticky="w")
-
-            step_desc = tk.Label(
-                text_block,
-                text=description,
-                font=("Segoe UI", 9),
-                fg="#4d5f73",
-                bg="#fbfdff",
-                justify="left",
-                wraplength=560,
-                anchor="w"
-            )
-            step_desc.grid(row=1, column=0, sticky="w", pady=(4, 0))
-
-            self.workflow_step_cards.append({
-                "card": step_card,
-                "badge": badge,
-                "text_block": text_block,
-                "title": step_title,
-                "description": step_desc,
-            })
-
-            if index < len(workflow_steps) - 1:
-                arrow = tk.Label(
-                    diagram_frame,
-                    text="↓",
-                    font=("Segoe UI", 12, "bold"),
-                    fg=MAIN_BLUE,
-                    bg="white"
+            for line_index in range(num_steps - 1):
+                left_center = step_width * (line_index + 0.5)
+                right_center = step_width * (line_index + 1.5)
+                canvas.create_line(
+                    left_center + icon_gap,
+                    30,
+                    right_center - icon_gap,
+                    30,
+                    fill="#c8dcf4",
+                    width=3,
+                    tags="line"
                 )
-                arrow.grid(row=index * 2 + 1, column=0, sticky="w", padx=36, pady=3)
 
-        credits_card = self._create_card(lower_grid)
-        credits_card.grid(row=0, column=1, sticky="nsew", padx=(18, 0))
-        credits_card.columnconfigure(0, weight=1)
-        credits_card.rowconfigure(3, weight=1)
+        connector.bind("<Configure>", _redraw_connector)
 
-        credits_title = tk.Label(
-            credits_card,
-            text="Development Credits",
-            font=("Segoe UI", 16, "bold"),
-            fg=MAIN_BLUE,
-            bg="white"
+        for index, (number, label, icon_file) in enumerate(workflow_steps):
+            step = tk.Frame(steps_row, bg=CONTENT_BG)
+            step.grid(row=0, column=index, sticky="n")
+
+            tile = tk.Canvas(
+                step, width=60, height=60, bg=CONTENT_BG,
+                highlightthickness=0, bd=0
+            )
+            tile.grid(row=0, column=0)
+
+            icon = self._load_nav_icon_small(icon_file)
+            if icon is not None:
+                self._step_icons.append(icon)
+                tile.create_image(30, 30, image=icon, anchor="center")
+            else:
+                tile.create_text(
+                    30, 30, text=number, font=("Segoe UI", 14, "bold"), fill=MAIN_BLUE
+                )
+
+            step_label = tk.Label(
+                step,
+                text=label,
+                font=("Segoe UI", 10, "bold"),
+                fg="#1f2933",
+                bg=CONTENT_BG
+            )
+            step_label.grid(row=1, column=0, pady=(10, 0))
+
+        # Spacer row keeps the footer pinned near the bottom of the page.
+        spacer = tk.Frame(self.body, bg=CONTENT_BG)
+        spacer.grid(row=2, column=0, sticky="nsew")
+
+        footer = tk.Label(
+            self.body,
+            text="Backend by Adekola Adeyemi, Justin Smart, Tony Woo & Jeff Defoe   \u2022   Interface by Misk Damdoum",
+            font=("Segoe UI", 9),
+            fg="#9bb1c9",
+            bg=CONTENT_BG
         )
-        credits_title.grid(row=0, column=0, sticky="w", padx=28, pady=(24, 24))
+        footer.grid(row=3, column=0, sticky="s", pady=(8, 0))
 
-        self._add_credit_row(
-            credits_card,
-            row=1,
-            heading="Backend logic developed by",
-            names="Adekola Adeyemi, Justin Smart, Tony Woo, and Jeff Defoe"
-        )
+    def on_show(self):
+        if self.tagline_after_id is not None:
+            self.after_cancel(self.tagline_after_id)
+            self.tagline_after_id = None
 
-        self._add_credit_row(
-            credits_card,
-            row=2,
-            heading="Software interface designed by",
-            names="Misk Damdoum"
-        )
+        self.tagline_animation_index = 0
+        self.tagline_label.configure(text="")
+        self._animate_tagline_once()
 
-    def _start_workflow_animation(self):
-        self._animate_workflow_steps()
-
-    def _animate_workflow_steps(self):
-        if not self.workflow_step_cards:
+    def _animate_tagline_once(self):
+        if not hasattr(self, "tagline_label"):
             return
 
-        for index, step in enumerate(self.workflow_step_cards):
-            self._set_step_active(step, index == self.workflow_animation_index)
+        shown_text = self.tagline_full_text[:self.tagline_animation_index]
+        cursor = "|" if self.tagline_animation_index < len(self.tagline_full_text) else ""
+        self.tagline_label.configure(text=shown_text + cursor)
 
-        self.workflow_animation_index = (self.workflow_animation_index + 1) % len(self.workflow_step_cards)
-        self.workflow_animation_after_id = self.after(950, self._animate_workflow_steps)
-
-    def _set_step_active(self, step, active):
-        if active:
-            card_bg = "#eef7ff"
-            border_color = MAIN_BLUE
-            title_fg = MAIN_BLUE
-            desc_fg = "#1f2933"
+        if self.tagline_animation_index < len(self.tagline_full_text):
+            self.tagline_animation_index += 1
+            self.tagline_after_id = self.after(38, self._animate_tagline_once)
         else:
-            card_bg = "#fbfdff"
-            border_color = "#c8dcf4"
-            title_fg = MAIN_BLUE
-            desc_fg = "#4d5f73"
+            self.tagline_after_id = None
 
-        step["card"].configure(
-            bg=card_bg,
-            highlightbackground=border_color,
-            highlightcolor=border_color,
-            highlightthickness=2 if active else 1,
-        )
-        step["badge"].configure(bg=MAIN_BLUE)
-        step["text_block"].configure(bg=card_bg)
-        step["title"].configure(bg=card_bg, fg=title_fg)
-        step["description"].configure(bg=card_bg, fg=desc_fg)
+    def _load_hero_icon(self):
+        path = os.path.join(os.path.dirname(__file__), ICONS_FOLDER, "gui_logo.png")
+        if os.path.exists(path):
+            try:
+                return tk.PhotoImage(file=path)
+            except tk.TclError:
+                return None
+        return None
 
-    def _create_card(self, parent):
-        return tk.Frame(
-            parent,
-            bg="white",
-            highlightbackground="#d8e3ef",
-            highlightthickness=1,
-            bd=0
-        )
+    def _draw_hero_badge(self, canvas):
+        self.app._draw_rounded_rect(canvas, 2, 2, 94, 94, radius=24, fill=MAIN_BLUE)
+        # fallback mesh glyph if icons/gui_logo.png is not available
+        offset = 22
+        step = 17
+        for i in range(3):
+            x = offset + i * step
+            canvas.create_line(x, offset - 4, x, offset + 2 * step + 4, fill="white", width=2)
+            y = offset + i * step
+            canvas.create_line(offset - 4, y, offset + 2 * step + 4, y, fill="white", width=2)
 
-    def _add_credit_row(self, parent, row, heading, names):
-        container = tk.Frame(parent, bg="white")
-        container.grid(row=row, column=0, sticky="ew", padx=28, pady=(0, 28))
-        container.columnconfigure(0, weight=1)
+    def _load_nav_icon_small(self, filename):
+        path = os.path.join(os.path.dirname(__file__), ICONS_FOLDER, filename)
+        if os.path.exists(path):
+            try:
+                return tk.PhotoImage(file=path)
+            except tk.TclError:
+                return None
+        return None
 
-        heading_label = tk.Label(
-            container,
-            text=heading,
-            font=("Segoe UI", 10, "bold"),
-            fg="#1f2933",
-            bg="white"
-        )
-        heading_label.grid(row=0, column=0, sticky="w")
-
-        names_label = tk.Label(
-            container,
-            text=names,
-            font=("Segoe UI", 10),
-            fg="#4d5f73",
-            bg="white",
-            wraplength=440,
-            justify="left"
-        )
-        names_label.grid(row=1, column=0, sticky="w", pady=(10, 0))
 
 
 class FilesPage(BasePage):
@@ -1594,9 +1570,12 @@ class RunPage(BasePage):
         )
         run_description.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
 
+        button_frame = tk.Frame(run_card, bg="white")
+        button_frame.grid(row=0, column=1, rowspan=2, sticky="e", padx=24, pady=18)
+
         self.run_button = tk.Button(
-            run_card,
-            text="▶  Run Mesh Generation",
+            button_frame,
+            text="▶  Generate Surfaces",
             command=self.run_backend,
             font=("Segoe UI", 10, "bold"),
             fg="white",
@@ -1607,9 +1586,29 @@ class RunPage(BasePage):
             bd=0,
             padx=24,
             pady=10,
-            cursor="hand2"
+            cursor="hand2",
+            width=22
         )
-        self.run_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=24, pady=18)
+        self.run_button.grid(row=0, column=0, sticky="e", pady=(0, 8))
+
+        self.bash_button = tk.Button(
+            button_frame,
+            text="▶  Build OpenFOAM Mesh",
+            command=self.run_bash_script,
+            font=("Segoe UI", 10, "bold"),
+            fg="white",
+            bg=MAIN_BLUE,
+            activeforeground="white",
+            activebackground="#003f73",
+            disabledforeground="white",
+            relief="flat",
+            bd=0,
+            padx=24,
+            pady=10,
+            cursor="hand2",
+            width=22
+        )
+        self.bash_button.grid(row=1, column=0, sticky="e")
 
         console_card = tk.Frame(
             self.body,
@@ -1726,21 +1725,38 @@ class RunPage(BasePage):
             with open(filename, "w", encoding="utf-8") as file:
                 file.write(self.console.get("1.0", "end"))
 
-    def set_running_state(self, is_running):
+    def set_running_state(self, is_running, run_type="python"):
         if is_running:
-            self.run_button.configure(
-                text="Running...",
-                state="disabled",
-                fg="white",
-                disabledforeground="white",
-                bg="#7fa6c9"
-            )
+            self.run_button.configure(state="disabled")
+            self.bash_button.configure(state="disabled")
+
+            if run_type == "bash":
+                self.bash_button.configure(
+                    text="Running...",
+                    fg="white",
+                    disabledforeground="white",
+                    bg="#003f73"
+                )
+            else:
+                self.run_button.configure(
+                    text="Running...",
+                    fg="white",
+                    disabledforeground="white",
+                    bg="#003f73"
+                )
         else:
             self.run_button.configure(
-                text="▶  Run Mesh Generation",
+                text="▶  Generate Surfaces",
                 state="normal",
                 fg="white",
                 bg=MAIN_BLUE
+            )
+            self.bash_button.configure(
+                text="▶  Build OpenFOAM Mesh",
+                state="normal",
+                fg="white",
+                bg=MAIN_BLUE,
+                disabledforeground="white"
             )
 
     def _candidate_backend_paths(self):
@@ -1849,6 +1865,610 @@ class RunPage(BasePage):
 
         self.append_console("=" * 70 + "\n\n")
 
+    def _get_project_folder(self):
+        gui_folder = os.path.dirname(os.path.abspath(__file__))
+        return os.path.abspath(os.path.join(gui_folder, os.pardir))
+
+    def _candidate_bash_script_paths(self):
+        project_folder = self._get_project_folder()
+
+        return [
+            os.path.join(project_folder, "runtest.sh"),
+            os.path.join(project_folder, "passageMeshes", "runtest.sh"),
+            os.path.join(project_folder, "passageMeshes", "multipassagetest.sh"),
+        ]
+
+    def _find_bash_script(self):
+        for candidate in self._candidate_bash_script_paths():
+            if os.path.exists(candidate):
+                return os.path.abspath(candidate)
+
+        return None
+
+    def _find_multipassage_script(self):
+        project_folder = self._get_project_folder()
+        candidate = os.path.join(project_folder, "passageMeshes", "multipassagetest.sh")
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+        return None
+
+    def _get_bash_working_folder(self, bash_script):
+        project_folder = self._get_project_folder()
+        script_name = os.path.basename(bash_script)
+
+        if script_name == "multipassagetest.sh":
+            return os.path.dirname(bash_script)
+
+        return project_folder
+
+    def _windows_to_wsl_path(self, windows_path):
+        try:
+            completed = subprocess.run(
+                ["wsl", "wslpath", "-a", windows_path],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return completed.stdout.strip()
+        except Exception:
+            drive, path_tail = os.path.splitdrive(os.path.abspath(windows_path))
+            drive_letter = drive.replace(":", "").lower()
+            path_tail = path_tail.replace("\\", "/")
+            return f"/mnt/{drive_letter}{path_tail}"
+
+    def _is_passage_folder_name(self, folder_name):
+        return folder_name.startswith("passage") and folder_name[7:].isdigit()
+
+    def _passage_sort_key(self, folder_name):
+        try:
+            return int(folder_name[7:])
+        except ValueError:
+            return 0
+
+    def _get_output_data_folder(self):
+        output_path = self.app.state.get("outputPath", "")
+        if output_path:
+            return os.path.abspath(output_path)
+
+        return os.path.join(self._get_project_folder(), "outputData")
+
+    def _find_generated_passages(self):
+        output_folder = self._get_output_data_folder()
+
+        if not os.path.isdir(output_folder):
+            return []
+
+        passages = []
+        for folder_name in os.listdir(output_folder):
+            folder_path = os.path.join(output_folder, folder_name)
+            if os.path.isdir(folder_path) and self._is_passage_folder_name(folder_name):
+                passages.append(folder_name)
+
+        return sorted(passages, key=self._passage_sort_key)
+
+    def _shell_quote(self, value):
+        return "'" + str(value).replace("'", "'\\''") + "'"
+
+    def _posix_join(self, *parts):
+        cleaned_parts = []
+
+        for index, part in enumerate(parts):
+            part = str(part).replace("\\", "/")
+
+            if index == 0:
+                cleaned_parts.append(part.rstrip("/"))
+            else:
+                cleaned_parts.append(part.strip("/"))
+
+        return "/".join(cleaned_parts)
+
+    def _openfoam_source_command(self):
+        return (
+            "if [ -f /opt/openfoam12/etc/bashrc ]; then . /opt/openfoam12/etc/bashrc; "
+            "elif [ -f /usr/lib/openfoam/openfoam12/etc/bashrc ]; then . /usr/lib/openfoam/openfoam12/etc/bashrc; "
+            "else true; fi"
+        )
+
+    def _single_passage_shell_command(self, project_folder, output_folder, passage_name="passage0"):
+        passage_meshes_folder = self._posix_join(project_folder, "passageMeshes")
+
+        return " && ".join([
+            self._openfoam_source_command(),
+            f"cd {self._shell_quote(passage_meshes_folder)}",
+            f"rm -rf {self._shell_quote(passage_name)}",
+            f"mkdir -p {self._shell_quote(passage_name)}",
+            f"cp -r template/* {self._shell_quote(passage_name)}/",
+            f"mkdir -p {self._shell_quote(passage_name)}/constant/geometry",
+            f"mkdir -p {self._shell_quote(passage_name)}/system",
+            f"cp {self._shell_quote(self._posix_join(output_folder, passage_name))}/*.stl {self._shell_quote(passage_name)}/constant/geometry/",
+            f"cp {self._shell_quote(self._posix_join(output_folder, passage_name, 'passageParameters'))} {self._shell_quote(passage_name)}/system/",
+            f"cd {self._shell_quote(passage_name)}",
+            "sed -i 's/\\r$//' system/geomUpdate.sh 2>/dev/null || true",
+            "sed -i 's/#eval{\\([^}]*\\)}/#calc \"\\1\"/g' system/blockMeshDict 2>/dev/null || true",
+            "bash ./geomUpdate.sh",
+            "sed -i 's/#eval{\\([^}]*\\)}/#calc \"\\1\"/g' system/blockMeshDict 2>/dev/null || true",
+            "blockMesh",
+            "checkMesh",
+        ])
+
+    def _wsl_single_passage_shell_command(self, source_passage_meshes_folder, source_output_folder, passage_name="passage0"):
+        # Use a real multi-line shell script instead of one long command joined by &&.
+        # This prevents an earlier failed cd/cp from being hidden by "|| true" and
+        # accidentally running blockMesh from the original Windows-mounted folder.
+        source_passage_meshes_folder = source_passage_meshes_folder.replace("\\", "/")
+        source_output_folder = source_output_folder.replace("\\", "/")
+        safe_passage_name = str(passage_name).replace("'", "")
+
+        return rf"""
+# This script is written to a real .sh file and then executed by WSL.
+# That avoids bash -c quoting/variable-expansion problems from Windows.
+# Use a GridWorks-specific variable name to avoid any OpenFOAM/internal conflicts.
+if ! command -v blockMesh >/dev/null 2>&1; then
+    if [ -f "$HOME/.bashrc" ]; then
+        . "$HOME/.bashrc" || true
+    fi
+fi
+
+if ! command -v blockMesh >/dev/null 2>&1; then
+    if [ -f /opt/openfoam12/etc/bashrc ]; then
+        . /opt/openfoam12/etc/bashrc || true
+    elif [ -f /usr/lib/openfoam/openfoam12/etc/bashrc ]; then
+        . /usr/lib/openfoam/openfoam12/etc/bashrc || true
+    fi
+fi
+
+if ! command -v blockMesh >/dev/null 2>&1; then
+    echo "[Error] blockMesh was not found after loading OpenFOAM."
+    exit 127
+fi
+
+set -e
+
+GW_RUN_ROOT="/tmp/GridWorksOpenFOAM_gridworks"
+SRC_PASSAGE_MESHES={self._shell_quote(source_passage_meshes_folder)}
+SRC_OUTPUT={self._shell_quote(source_output_folder)}
+PASSAGE_NAME={self._shell_quote(safe_passage_name)}
+
+rm -rf "$GW_RUN_ROOT"
+mkdir -p "$GW_RUN_ROOT/passageMeshes" "$GW_RUN_ROOT/outputData"
+
+cp -a "$SRC_PASSAGE_MESHES/." "$GW_RUN_ROOT/passageMeshes/"
+cp -a "$SRC_OUTPUT/." "$GW_RUN_ROOT/outputData/"
+
+cd "$GW_RUN_ROOT/passageMeshes"
+echo "[OpenFOAM staging folder] $(pwd)"
+
+find . -name "*.sh" -exec sed -i 's/\r$//' {{}} \;
+mkdir -p template/constant/geometry template/system
+
+if [ -f template/system/blockMeshDict ]; then
+    sed -i 's/#eval{{\([^}}]*\)}}/#calc "\1"/g' template/system/blockMeshDict
+fi
+
+if [ ! -d "$GW_RUN_ROOT/outputData/$PASSAGE_NAME" ]; then
+    echo "[Error] Missing generated folder: $GW_RUN_ROOT/outputData/$PASSAGE_NAME"
+    exit 2
+fi
+
+if ! ls "$GW_RUN_ROOT/outputData/$PASSAGE_NAME"/*.stl >/dev/null 2>&1; then
+    echo "[Error] No STL files found in: $GW_RUN_ROOT/outputData/$PASSAGE_NAME"
+    exit 2
+fi
+
+if [ ! -f "$GW_RUN_ROOT/outputData/$PASSAGE_NAME/passageParameters" ]; then
+    echo "[Error] Missing passageParameters in: $GW_RUN_ROOT/outputData/$PASSAGE_NAME"
+    exit 2
+fi
+
+rm -rf "$PASSAGE_NAME"
+mkdir -p "$PASSAGE_NAME"
+cp -a template/. "$PASSAGE_NAME/"
+mkdir -p "$PASSAGE_NAME/constant/geometry" "$PASSAGE_NAME/system"
+cp "$GW_RUN_ROOT/outputData/$PASSAGE_NAME"/*.stl "$PASSAGE_NAME/constant/geometry/"
+cp "$GW_RUN_ROOT/outputData/$PASSAGE_NAME/passageParameters" "$PASSAGE_NAME/system/"
+
+cd "$PASSAGE_NAME"
+
+if [ ! -f ./geomUpdate.sh ]; then
+    echo "[Error] Missing geomUpdate.sh in case folder: $(pwd)"
+    exit 2
+fi
+
+bash ./geomUpdate.sh
+
+if [ -f system/blockMeshDict ]; then
+    sed -i 's/#eval{{\([^}}]*\)}}/#calc "\1"/g' system/blockMeshDict
+fi
+
+unset FOAM_CASE
+export FOAM_CASE="$(pwd)"
+echo "[OpenFOAM case folder] $(pwd)"
+
+blockMesh
+CHECKMESH_STATUS=0
+checkMesh || CHECKMESH_STATUS=$?
+
+# Save the finished OpenFOAM mesh back to the original APT-Grid folder,
+# matching the original/manual workflow output location:
+# APT-Grid/passageMeshes/passage0/constant/polyMesh
+# Important: copy files manually with cat instead of cp -a/cp -R so WSL does
+# not try to preserve Linux permissions/timestamps on the Windows drive.
+DEST_CASE="$SRC_PASSAGE_MESHES/$PASSAGE_NAME"
+SRC_CASE="$GW_RUN_ROOT/passageMeshes/$PASSAGE_NAME"
+DEST_POLYMESH="$DEST_CASE/constant/polyMesh"
+echo "[Saving OpenFOAM mesh] $DEST_POLYMESH"
+
+copy_plain_tree() {{
+    SRC_DIR="$1"
+    DST_DIR="$2"
+    if [ ! -d "$SRC_DIR" ]; then
+        return 0
+    fi
+    rm -rf "$DST_DIR"
+    mkdir -p "$DST_DIR"
+    (cd "$SRC_DIR" && find . -type d -print) | while IFS= read -r d; do
+        mkdir -p "$DST_DIR/$d"
+    done
+    (cd "$SRC_DIR" && find . -type f -print) | while IFS= read -r f; do
+        mkdir -p "$DST_DIR/$(dirname "$f")"
+        cat "$SRC_DIR/$f" > "$DST_DIR/$f"
+    done
+}}
+
+# Keep the useful case pieces, but skip OpenFOAM dynamicCode build artifacts.
+copy_plain_tree "$SRC_CASE/constant/polyMesh" "$DEST_CASE/constant/polyMesh"
+copy_plain_tree "$SRC_CASE/constant/geometry" "$DEST_CASE/constant/geometry"
+copy_plain_tree "$SRC_CASE/system" "$DEST_CASE/system"
+echo "[Saved OpenFOAM mesh] $DEST_POLYMESH"
+
+if [ "$CHECKMESH_STATUS" -ne 0 ]; then
+    echo "[Warning] checkMesh returned status $CHECKMESH_STATUS. Mesh files were still saved."
+fi
+exit 0
+""".strip()
+
+    def _wsl_multipassage_shell_command(self, source_passage_meshes_folder, source_output_folder):
+        # Stage everything inside Linux first, then run the existing two-passage script.
+        source_passage_meshes_folder = source_passage_meshes_folder.replace("\\", "/")
+        source_output_folder = source_output_folder.replace("\\", "/")
+
+        return rf"""
+# This script is written to a real .sh file and then executed by WSL.
+# That avoids bash -c quoting/variable-expansion problems from Windows.
+# Use a GridWorks-specific variable name to avoid any OpenFOAM/internal conflicts.
+if ! command -v blockMesh >/dev/null 2>&1; then
+    if [ -f "$HOME/.bashrc" ]; then
+        . "$HOME/.bashrc" || true
+    fi
+fi
+
+if ! command -v blockMesh >/dev/null 2>&1; then
+    if [ -f /opt/openfoam12/etc/bashrc ]; then
+        . /opt/openfoam12/etc/bashrc || true
+    elif [ -f /usr/lib/openfoam/openfoam12/etc/bashrc ]; then
+        . /usr/lib/openfoam/openfoam12/etc/bashrc || true
+    fi
+fi
+
+if ! command -v blockMesh >/dev/null 2>&1; then
+    echo "[Error] blockMesh was not found after loading OpenFOAM."
+    exit 127
+fi
+
+set -e
+
+GW_RUN_ROOT="/tmp/GridWorksOpenFOAM_gridworks"
+SRC_PASSAGE_MESHES={self._shell_quote(source_passage_meshes_folder)}
+SRC_OUTPUT={self._shell_quote(source_output_folder)}
+
+rm -rf "$GW_RUN_ROOT"
+mkdir -p "$GW_RUN_ROOT/passageMeshes" "$GW_RUN_ROOT/outputData"
+
+cp -a "$SRC_PASSAGE_MESHES/." "$GW_RUN_ROOT/passageMeshes/"
+cp -a "$SRC_OUTPUT/." "$GW_RUN_ROOT/outputData/"
+
+cd "$GW_RUN_ROOT/passageMeshes"
+echo "[OpenFOAM staging folder] $(pwd)"
+
+find . -name "*.sh" -exec sed -i 's/\r$//' {{}} \;
+mkdir -p template/constant/geometry template/system
+
+if [ -f template/system/blockMeshDict ]; then
+    sed -i 's/#eval{{\([^}}]*\)}}/#calc "\1"/g' template/system/blockMeshDict
+fi
+
+if [ ! -f multipassagetest.sh ]; then
+    echo "[Error] Missing multipassagetest.sh in: $(pwd)"
+    exit 2
+fi
+
+unset FOAM_CASE
+MESH_STATUS=0
+bash multipassagetest.sh || MESH_STATUS=$?
+
+# Save generated OpenFOAM passage cases back to the original APT-Grid folder.
+# Important: copy files manually with cat instead of cp -a/cp -R so Linux/WSL does
+# not try to preserve Linux permissions/timestamps on filesystems that may not support them.
+copy_plain_tree() {{
+    SRC_DIR="$1"
+    DST_DIR="$2"
+    if [ ! -d "$SRC_DIR" ]; then
+        return 0
+    fi
+    rm -rf "$DST_DIR"
+    mkdir -p "$DST_DIR"
+    (cd "$SRC_DIR" && find . -type d -print) | while IFS= read -r d; do
+        mkdir -p "$DST_DIR/$d"
+    done
+    (cd "$SRC_DIR" && find . -type f -print) | while IFS= read -r f; do
+        mkdir -p "$DST_DIR/$(dirname "$f")"
+        cat "$SRC_DIR/$f" > "$DST_DIR/$f"
+    done
+}}
+
+for CASE_DIR in passage*; do
+    if [ -d "$CASE_DIR" ]; then
+        echo "[Saving OpenFOAM case] $SRC_PASSAGE_MESHES/$CASE_DIR"
+        SRC_CASE="$GW_RUN_ROOT/passageMeshes/$CASE_DIR"
+        DEST_CASE="$SRC_PASSAGE_MESHES/$CASE_DIR"
+        mkdir -p "$DEST_CASE/constant"
+        # Keep the useful case pieces, but skip OpenFOAM dynamicCode build artifacts.
+        copy_plain_tree "$SRC_CASE/constant/polyMesh" "$DEST_CASE/constant/polyMesh"
+        copy_plain_tree "$SRC_CASE/constant/geometry" "$DEST_CASE/constant/geometry"
+        copy_plain_tree "$SRC_CASE/system" "$DEST_CASE/system"
+    fi
+done
+
+echo "[Saved OpenFOAM cases] $SRC_PASSAGE_MESHES"
+if [ "$MESH_STATUS" -ne 0 ]; then
+    echo "[Warning] multipassagetest.sh returned status $MESH_STATUS. Any generated case files were still saved."
+fi
+exit 0
+""".strip()
+
+    def _write_shell_script(self, shell_command, script_filename):
+        """Write a temporary shell script to outputData and return its local path."""
+        output_folder = self._get_output_data_folder()
+        os.makedirs(output_folder, exist_ok=True)
+        script_path = os.path.join(output_folder, script_filename)
+
+        with open(script_path, "w", encoding="utf-8", newline="\n") as script_file:
+            script_file.write("#!/usr/bin/env bash\n")
+            script_file.write(shell_command.strip())
+            script_file.write("\n")
+
+        try:
+            os.chmod(script_path, 0o755)
+        except OSError:
+            pass
+
+        return script_path
+
+    def _write_wsl_shell_script(self, shell_command, script_filename):
+        """Write a temporary WSL shell script to outputData and return its WSL path."""
+        script_path = self._write_shell_script(shell_command, script_filename)
+        return self._windows_to_wsl_path(script_path)
+
+    def _build_multipassage_command(self):
+        project_folder = self._get_project_folder()
+        working_folder = os.path.join(project_folder, "passageMeshes")
+        bash_script = self._find_multipassage_script()
+
+        if bash_script is None:
+            return None, working_folder, None
+
+        if os.name == "nt":
+            if shutil.which("wsl"):
+                wsl_passage_meshes_folder = self._windows_to_wsl_path(working_folder)
+                wsl_output_folder = self._windows_to_wsl_path(self._get_output_data_folder())
+                shell_command = self._wsl_multipassage_shell_command(wsl_passage_meshes_folder, wsl_output_folder)
+                wsl_script_path = self._write_wsl_shell_script(shell_command, "gridworks_openfoam_multipassage.sh")
+                return ["wsl", "bash", wsl_script_path], working_folder, bash_script
+
+            bash_exe = shutil.which("bash")
+            if bash_exe:
+                shell_command = self._wsl_multipassage_shell_command(
+                    working_folder.replace("\\", "/"),
+                    self._get_output_data_folder().replace("\\", "/")
+                )
+                script_path = self._write_shell_script(shell_command, "gridworks_openfoam_multipassage.sh")
+                return [bash_exe, script_path], working_folder, bash_script
+
+            return None, working_folder, bash_script
+
+        # Native Linux/macOS path: run OpenFOAM directly with bash, no WSL path conversion.
+        shell_command = self._wsl_multipassage_shell_command(
+            working_folder.replace("\\", "/"),
+            self._get_output_data_folder().replace("\\", "/")
+        )
+        script_path = self._write_shell_script(shell_command, "gridworks_openfoam_multipassage.sh")
+        return ["bash", script_path], working_folder, bash_script
+
+    def _build_bash_command(self, bash_script, working_folder):
+        if os.name == "nt":
+            if shutil.which("wsl"):
+                wsl_working_folder = self._windows_to_wsl_path(working_folder)
+                wsl_script = self._windows_to_wsl_path(bash_script)
+                script_name = os.path.basename(wsl_script)
+
+                if os.path.dirname(bash_script) == working_folder:
+                    shell_command = (
+                        f'cd "{wsl_working_folder}" || exit 1; '
+                        'find . -name "*.sh" -exec sed -i \'s/\\r$//\' {} \\; 2>/dev/null || true; '
+                        'mkdir -p template/constant/geometry template/system; '
+                        'sed -i \'s/#eval{\\([^}]*\\)}/#calc "\\1"/g\' template/system/blockMeshDict 2>/dev/null || true; '
+                        f'bash "{script_name}"'
+                    )
+                else:
+                    shell_command = (
+                        f'cd "{wsl_working_folder}" || exit 1; '
+                        f'sed -i \'s/\\r$//\' "{wsl_script}" 2>/dev/null || true; '
+                        f'bash "{wsl_script}"'
+                    )
+
+                return ["wsl", "bash", "-lc", shell_command]
+
+            bash_exe = shutil.which("bash")
+            if bash_exe:
+                return [bash_exe, bash_script]
+
+            return None
+
+        return ["bash", bash_script]
+
+    def _build_single_passage_command(self, passage_name="passage0"):
+        project_folder = self._get_project_folder()
+        working_folder = os.path.join(project_folder, "passageMeshes")
+
+        if os.name == "nt":
+            if shutil.which("wsl"):
+                wsl_passage_meshes_folder = self._windows_to_wsl_path(working_folder)
+                wsl_output_folder = self._windows_to_wsl_path(self._get_output_data_folder())
+                shell_command = self._wsl_single_passage_shell_command(
+                    wsl_passage_meshes_folder,
+                    wsl_output_folder,
+                    passage_name
+                )
+                wsl_script_path = self._write_wsl_shell_script(shell_command, "gridworks_openfoam_single.sh")
+                return ["wsl", "bash", wsl_script_path], working_folder
+
+            bash_exe = shutil.which("bash")
+            if bash_exe:
+                shell_command = self._wsl_single_passage_shell_command(
+                    working_folder.replace("\\", "/"),
+                    self._get_output_data_folder().replace("\\", "/"),
+                    passage_name
+                )
+                script_path = self._write_shell_script(shell_command, "gridworks_openfoam_single.sh")
+                return [bash_exe, script_path], working_folder
+
+            return None, working_folder
+
+        # Native Linux/macOS path: run OpenFOAM directly with bash, no WSL path conversion.
+        shell_command = self._wsl_single_passage_shell_command(
+            working_folder.replace("\\", "/"),
+            self._get_output_data_folder().replace("\\", "/"),
+            passage_name
+        )
+        script_path = self._write_shell_script(shell_command, "gridworks_openfoam_single.sh")
+        return ["bash", script_path], working_folder
+
+    def _print_bash_summary(self, workflow_name, passages, working_folder, command, bash_script=None):
+        self.append_console("\n" + "=" * 70 + "\n")
+        self.append_console("[OpenFOAM Mesh Summary]\n")
+        self.append_console("=" * 70 + "\n")
+        self.append_console(f"Workflow: {workflow_name}\n")
+        self.append_console(f"Detected passages: {', '.join(passages)}\n")
+        if bash_script:
+            self.append_console(f"Bash script: {bash_script}\n")
+        self.append_console(f"Working folder: {working_folder}\n")
+        self.append_console(f"Command: {' '.join(command)}\n")
+        self.append_console("=" * 70 + "\n\n")
+
+    def run_bash_script(self):
+        if self.process is not None and self.process.poll() is None:
+            messagebox.showwarning(
+                "Run Already Active",
+                "A run is already active."
+            )
+            return
+
+        passages = self._find_generated_passages()
+
+        if not passages:
+            messagebox.showerror(
+                "No Generated Passages Found",
+                "Could not find any generated passage folders.\n\n"
+                "Run Generate Surfaces first and make sure the output folder contains passage0."
+            )
+            return
+
+        if "passage0" not in passages:
+            messagebox.showerror(
+                "Missing passage0",
+                "The output folder contains passage folders, but passage0 was not found.\n\n"
+                "The OpenFOAM workflow expects passage0 to exist."
+            )
+            return
+
+        if len(passages) == 1:
+            workflow_name = "Single passage OpenFOAM build"
+            bash_script = None
+            command, working_folder = self._build_single_passage_command("passage0")
+        else:
+            workflow_name = "Two-passage OpenFOAM build"
+            command, working_folder, bash_script = self._build_multipassage_command()
+
+            if bash_script is None:
+                messagebox.showerror(
+                    "Multipassage Script Not Found",
+                    "Multiple passage folders were found, but passageMeshes/multipassagetest.sh was not found."
+                )
+                return
+
+            if len(passages) > 2:
+                messagebox.showwarning(
+                    "Only Two-Passage Script Available",
+                    "More than two generated passage folders were found.\n\n"
+                    "The current multipassagetest.sh script is hard-coded for passage0 and passage1, "
+                    "so only those two will be processed by this button."
+                )
+
+        if command is None:
+            messagebox.showerror(
+                "Bash Not Available",
+                "Could not find WSL or bash on this computer.\n\n"
+                "On Windows, this step should usually be run through WSL with OpenFOAM installed."
+            )
+            return
+
+        self.set_running_state(True, "bash")
+        self._print_bash_summary(workflow_name, passages, working_folder, command, bash_script)
+        self.append_console("[OpenFOAM Mesh Build Started]\n")
+
+        thread = threading.Thread(
+            target=self._run_bash_thread,
+            args=(command, working_folder),
+            daemon=True
+        )
+        thread.start()
+
+        self.after(100, self._process_output_queue)
+
+    def _run_bash_thread(self, command, working_folder):
+        try:
+            self.output_queue.put(f"[Command] {' '.join(command)}\n\n")
+
+            process_cwd = None if command and command[0] == "wsl" else working_folder
+
+            self.process = subprocess.Popen(
+                command,
+                cwd=process_cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+
+            if self.process.stdout is not None:
+                for line in self.process.stdout:
+                    self.output_queue.put(line)
+
+            return_code = self.process.wait()
+
+            if return_code == 0:
+                self.output_queue.put("\n[Run Complete] OpenFOAM mesh build finished successfully.\n")
+            else:
+                self.output_queue.put(f"\n[Run Failed] OpenFOAM mesh build exited with code {return_code}.\n")
+
+        except Exception as error:
+            self.output_queue.put(f"\n[Error] {error}\n")
+
+        finally:
+            self.process = None
+            self.after(0, lambda: self.set_running_state(False))
+
+
     def run_backend(self):
         if self.process is not None and self.process.poll() is None:
             messagebox.showwarning(
@@ -1876,7 +2496,7 @@ class RunPage(BasePage):
             messagebox.showerror("Config Error", f"Could not write the run config file:\n\n{error}")
             return
 
-        self.set_running_state(True)
+        self.set_running_state(True, "python")
         self._print_run_summary(config, config_path, backend_script)
         self.append_console("[Run Started]\n")
 
@@ -2295,10 +2915,10 @@ class AptGridApp(tk.Tk):
 
     def _show_info_popup(self):
         messagebox.showinfo(
-            "About APT-Grid Interface",
+            "About BladeForge",
             (
-                "APT-Grid Interface\n\n"
-                "This graphical interface supports the APT-Grid blade passage "
+                "BladeForge\n\n"
+                "This graphical interface supports the blade passage "
                 "grid-generation workflow by providing a guided environment for "
                 "selecting geometry files, configuring mesh parameters, and "
                 "launching the backend generation process.\n\n"
@@ -2312,6 +2932,8 @@ class AptGridApp(tk.Tk):
         page = self.pages[name]
         if hasattr(page, "load_state"):
             page.load_state()
+        if hasattr(page, "on_show"):
+            page.on_show()
         page.tkraise()
         self._highlight_nav(name)
         self.content.focus_set()
