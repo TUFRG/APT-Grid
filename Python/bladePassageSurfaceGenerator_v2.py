@@ -19,6 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d, CubicSpline, splprep, splev
 from scipy.optimize import fsolve
+from scipy.optimize import root as rootFind
 import model_function as mf
 import TransfiniteInterpolation as tf
 import findLastQuadPointFunction as fq  # F = fq.getFvertex(A, B, C, D, E, meridCurve)
@@ -3228,7 +3229,7 @@ def createSTLs(Xvalues, Yvalues, Zvalues, filePath, passageNum):
 
 
 #%% Write out input file 
-def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, passageNum, additionalTangentialRefine, additionalAxialRefine, highHub1, lowHub1, highCas1, lowCas1, highHub2, lowHub2, highCas2, lowCas2):
+def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, dataPath, passageNum, additionalTangentialRefine, additionalAxialRefine, highHub1, lowHub1, highCas1, lowCas1, highHub2, lowHub2, highCas2, lowCas2, nElementsPerVar):
     """ compute and write all passage-specific parameters to file
     to be parsed by a Bash script to modify dictionaries prior to
     generating the mesh using blockMesh (OpenFOAM tool)"""
@@ -3345,19 +3346,18 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     rExpRatio = gRad ** (1 / (rCells - 1))
     drOuter = rLen / ((1 - rExpRatio**rCells) / (1 - rExpRatio))
     drMiddle = drOuter * rExpRatio ** (rCells - 1)  # This is the approximate radial cell size midpassage
-    # Calculate hub/casing BL number of cells, expansion ratio
+    # Calculate hub/casing BL number of cells, expansion ratio, grading ratio
+    #    paramFile.write('dy1Hub   {}; \n'.format(dy1Hub))
+    #    paramFile.write('dy1Cas   {}; \n'.format(dy1Cas))
     print('Calculating number of BL cells for hub/casing...')
+    print(f'Hub first BL cell size = {dy1Hub}')
+    print(f'Casing first BL cell size = {dy1Cas}')
     nBLcellsHub, rBLcellsHub = getNumBLCells(dy1Hub, drOuter, delHub)
     nBLcellsCas, rBLcellsCas = getNumBLCells(dy1Cas, drOuter, delCas)
-    print(f'Hub: {nBLcellsHub} with r={rBLcellsHub}')
-    print(f'Casing: {nBLcellsCas} with r={rBLcellsCas}')
-    # Determine splits for refineWallLayer
-    splitsHub = splitsCalc(nBLcellsHub, rBLcellsHub)
-    splitsCas = splitsCalc(nBLcellsCas, rBLcellsCas)
-    print('refineWallLayer splits for hub:')
-    print(splitsHub)
-    print('refineWallLayer splits for casing:')
-    print(splitsCas)
+    gBLcellsHub = rBLcellsHub**(nBLcellsHub - 1)
+    gBLcellsCas = rBLcellsCas**(nBLcellsCas - 1)
+    print(f'Hub: {nBLcellsHub} with r={rBLcellsHub}, so g={gBLcellsHub}')
+    print(f'Casing: {nBLcellsCas} with r={rBLcellsCas}, so g={gBLcellsCas}')
 
     # Now for tangential grading:
     dtMiddle = drMiddle/additionalTangentialRefine  # Target AR = 1 for the middle of the passage with additional refinement = 1
@@ -3370,12 +3370,10 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     ntan = int(tCells[0] * 2)
     # Calculate blade BL number of cells, expansion ratio
     print('Calculating number of BL cells for blade...')
+    print(f'Blade first BL cell size = {dy1Bla}')
     nBLcellsBlade, rBLcellsBlade = getNumBLCells(dy1Bla, dtOuter, delBla)
-    print(f'Blade: {nBLcellsBlade} with r={rBLcellsBlade}')
-    # Determine splits for refineWallLayer
-    splitsBlade = splitsCalc(nBLcellsBlade, rBLcellsBlade)
-    print('refineWallLayer splits for blade:')
-    print(splitsBlade)
+    gBLcellsBlade = rBLcellsBlade**(nBLcellsBlade - 1)
+    print(f'Blade: {nBLcellsBlade} with r={rBLcellsBlade}, so g={gBLcellsBlade}')
     
     # Axial grading parameters
     # for over-blade blocks, use same AR = 1 approach at mid-passage with additional refinement = 1
@@ -3391,14 +3389,30 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     xLen3 = xLen2  # both are the same by definition since midchord divides them
     # axial grading ratios and number of cells for over-blade blocks
     print('Solving for number of cells for first between-blades block...')
-    root = fsolve(bladeGradingFunction, x0=[2.0*(0.01/dax1primeLE), 1.5, nrad], args=(dxMiddle, dax1primeLE, xLen2, rLE))
-    gLE, gM1, nax2 = root
+    gstartVal = 2.0*(0.01/dax1primeLE)
+    guessesGstart = np.linspace(1.01, 5.0*gstartVal, nElementsPerVar)
+    guessesGend = np.linspace(1.0/gstartVal, gstartVal, nElementsPerVar)
+    guessesN = np.linspace(np.round(nrad/4), np.round(nrad*2), nElementsPerVar)
+    GuessesGend, GuessesGstart, GuessesN = np.meshgrid(guessesGend, guessesGstart, guessesN)
+    resids = [abs(bladeGradingFunction([GuessesGstart.flatten()[g], GuessesGend.flatten()[g], GuessesN.flatten()[g]], dxMiddle, dax1primeLE, xLen2, rLE)) for g in range(GuessesN.size)]
+    residRMS = [np.sqrt(resids[k][0]**2+resids[k][1]**2+resids[k][2]**2) for k in range(len(resids))]
+    bestGuess = np.array([GuessesGstart.flatten()[np.argmin(residRMS)], GuessesGend.flatten()[np.argmin(residRMS)], round(GuessesN.flatten()[np.argmin(residRMS)])])
+    rootObj = rootFind(bladeGradingFunction, x0=bestGuess, args=(dxMiddle, dax1primeLE, xLen2, rLE))
+    gLE, gM1, nax2 = rootObj.x
     nax2 = int(np.round(nax2))
     fLE = (np.log(gLE)/np.log(rLE) + 1)/nax2
     print(f'nax2={nax2}')
     print('Solving for number of cells for second between-blades block...')
-    root = fsolve(bladeGradingFunction, x0=[2.0*(0.01/dax1primeTE), 1.5, nrad], args=(dxMiddle, dax1primeTE, xLen3, rTE))
-    gTE, gM2, nax3 = root
+    gstartVal = 2.0*(0.01/dax1primeTE)
+    guessesGstart = np.linspace(1.01, 5.0*gstartVal, nElementsPerVar)
+    guessesGend = np.linspace(1.0/gstartVal, gstartVal, nElementsPerVar)
+    guessesN = np.linspace(np.round(nrad/4), np.round(nrad*2), nElementsPerVar)
+    GuessesGend, GuessesGstart, GuessesN = np.meshgrid(guessesGend, guessesGstart, guessesN)
+    resids = [abs(bladeGradingFunction([GuessesGstart.flatten()[g], GuessesGend.flatten()[g], GuessesN.flatten()[g]], dxMiddle, dax1primeTE, xLen3, rTE)) for g in range(GuessesN.size)]
+    residRMS = [np.sqrt(resids[k][0]**2+resids[k][1]**2+resids[k][2]**2) for k in range(len(resids))]
+    bestGuess = np.array([GuessesGstart.flatten()[np.argmin(residRMS)], GuessesGend.flatten()[np.argmin(residRMS)], round(GuessesN.flatten()[np.argmin(residRMS)])])
+    rootObj = rootFind(bladeGradingFunction, x0=bestGuess, args=(dxMiddle, dax1primeTE, xLen3, rTE))
+    gTE, gM2, nax3 = rootObj.x
     nax3 = int(np.round(nax3))
     fTE = (np.log(gTE)/np.log(rTE) + 1)/nax3
     gTE = 1/gTE  # invert results since this block "goes the other way"
@@ -3589,12 +3603,19 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     paramFile.write(f'scale  {scale};  \n')              # Cart. coords ver.
     # write geometric and grid parameters
     paramFile.write('nrad   {}; \n'.format(nrad))
+
+    # BL parameters
+    paramFile.write('nBLcellsHub   {}; \n'.format(nBLcellsHub))
+    paramFile.write('nBLcellsCas   {}; \n'.format(nBLcellsCas))
+    paramFile.write('nBLcellsBlade   {}; \n'.format(nBLcellsBlade))
     paramFile.write('delHub   {}; \n'.format(delHub))
     paramFile.write('delCas   {}; \n'.format(delCas))
     paramFile.write('bladeBLthickness   {}; \n'.format(delBla))
-    paramFile.write('dely1Blade   {}; \n'.format(dy1Bla))
-    paramFile.write('dy1Hub   {}; \n'.format(dy1Hub))
-    paramFile.write('dy1Cas   {}; \n'.format(dy1Cas))
+    paramFile.write('gBLhub   {}; \n'.format(gBLcellsHub))
+    paramFile.write('gBLcas   {}; \n'.format(gBLcellsCas))
+    paramFile.write('gBLbla   {}; \n'.format(gBLcellsBlade))
+
+    # Grading/cell counts    
     paramFile.write('gRad   {}; \n'.format(gRad))
     paramFile.write('gTan   {}; \n'.format(gTan))
 
@@ -3693,11 +3714,6 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     paramFile.write(axgrading3CPoffset + '\n')
     paramFile.write(axgrading3CNoffset + '\n')
 
-    # BL parameters
-    paramFile.write('nBLcellsHub   {}; \n'.format(nBLcellsHub))
-    paramFile.write('nBLcellsCas   {}; \n'.format(nBLcellsCas))
-    paramFile.write('nBLcellsBlade   {}; \n'.format(nBLcellsBlade))
-
     # Write vertex coordinates
     
     paramFile.write(format_coord('hubIp', hubIp))
@@ -3769,19 +3785,19 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     # close file
     paramFile.close()
 
-
+    
 def main() -> int:
     """ All the main blocks of the code get executed here """
 
     """ INPUTS: """
     # By Jeff Defoe -- more general input code
     dataPath = '../inputData/'
-    hubFileName = 'IGVHub_reformatted.curve'
-    casFileName = 'IGVCasing_reformatted.curve'
+    hubFileName = 'hub_TG.curve'
+    casFileName = 'casing_TG.curve'
     bladeCurveFile = 'IGVBlade.curve'
     outputPath = '../outputData/'
     Nb = 20  # number of blades in row
-    periodic = 0  # mode selection
+    periodic = 1  # mode selection
     
     # Grid generation tuning parameters
     percentVal = 0.04  # fraction of arclength of blades where we cut off to avoid odd cell sizes in blade-to-offset BL blocks
@@ -3796,7 +3812,7 @@ def main() -> int:
         # For example, if input data in mm, scale = 0.001
 
     # Grid generation inputs
-    nrad = 40  # Number of radial points outside endwall BLs
+    nrad = 70  # Number of radial points outside endwall BLs
     # optional BL definition parameters
     rhoref = 1.2  # base SI units (kg/m**3)
     Uref = 100.0  # base SI units (m/s)
@@ -3804,9 +3820,9 @@ def main() -> int:
     LrefCas = 178.0  # input length units (cannot be calculated because it depends on components outside domain)
     LrefBla = 35.0  # input length units (JD: this should be calculated = mean chord)
     muref = 1.8e-5  # base SI units (kg/(m*s))
-    yPlusHub = 5
-    yPlusCas = 5
-    yPlusBla = 5
+    yPlusHub = 100
+    yPlusCas = 100
+    yPlusBla = 100
     # have option to calculate BL parameters based on above, or just directly
     # provide BL thickness and first cell size (input units)
     delHub = calcBLdelta(rhoref,Uref,LrefHub*scale,muref)/scale  # or just set a value (in input units)
@@ -3821,7 +3837,7 @@ def main() -> int:
     # Tangential grading parameters
         # value = ratio of cell size at midpassage to cell size adjacent blade BLs
     gTan = 2  #2  # note: 4 gives a reasonable-looking grid
-    additionalTangentialRefine = 8  # 1 = no extra refinement. This is a factor on the midpassage cell size.
+    additionalTangentialRefine = 5  # 1 = no extra refinement. This is a factor on the midpassage cell size.
     # Axial clustering parameters
     # Leading/trailing edge clustering parameters
     dax1primeLE = 0.003  # This is for about half the blade, so 0.01 means 0.5% chord
@@ -3829,7 +3845,7 @@ def main() -> int:
     dax1primeTE = 0.002  # This is for about half the blade, so 0.01 means 0.5% chord
     rTE = 1.2  # expansion ratio for clustering of cells near the LE of the blades
     # Up/downstream expansion ratios of cells further than 1/2 chord away from blades
-    additionalAxialRefine = 2  # 1 = no extra refinement. This is a factor on the midpassage cell size.
+    additionalAxialRefine = 3.5  # 1 = no extra refinement. This is a factor on the midpassage cell size.
     rUpFar = 1.1  # used such that values > 1 mean cells grow as we get further from blades
     rDnFar = 1.1  # used such that values > 1 mean cells grow as we get further from blades
     """ END INPUTS """
@@ -3839,6 +3855,10 @@ def main() -> int:
     passageRes = 360  # Resolution of points for a single passage 
     bladeRes = 400  # Increase resolution of underlying blade data 
     mul = 5  # Additional factor of extra points when refining extensions
+
+    # Numerical solution initial-guess-finding parameter
+    # Tpically does not need to be modified
+    nElementsPerVar = 20
 
     """
     Description of input data format:
@@ -4239,7 +4259,7 @@ def main() -> int:
         createSTLs(Xvalues, Yvalues, Zvalues, outputPath, a)
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
-        calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap)
+        calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap, nElementsPerVar)
 
     # plt.axis('equal')
     # plt.legend()
