@@ -3851,6 +3851,7 @@ def main() -> int:
     """ END INPUTS """
     
     # STL definition inputs, typically do not need to be modified:
+    STLoutput = 0  # determine whether STLs are written or not, primarily useful for debugging
     res = 30  # upstream and downstream extention resolution 
     passageRes = 360  # Resolution of points for a single passage 
     bladeRes = 400  # Increase resolution of underlying blade data 
@@ -4254,12 +4255,16 @@ def main() -> int:
                                                   midCurve1Cart,
                                                   midCurve2Cart)
 
-        # Define/write STLs
-        print('Writing STL files for passage {}'.format(a))
-        createSTLs(Xvalues, Yvalues, Zvalues, outputPath, a)
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
         calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap, nElementsPerVar)
+
+        if(STLoutput):
+            # Define/write STLs
+            print('Writing STL files for passage {}'.format(a))
+            createSTLs(Xvalues, Yvalues, Zvalues, outputPath, a)
+        else:
+            print('STL output disabled.')
 
     # plt.axis('equal')
     # plt.legend()
