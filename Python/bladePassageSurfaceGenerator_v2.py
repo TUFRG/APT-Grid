@@ -3336,8 +3336,12 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
 
     # estimate midspan / midpassage radial cell size
     # get pitches at midpassage
-    pitchH = np.linalg.norm(hubMp-hubMn)
-    pitchC = np.linalg.norm(casMp-casMn)
+    pitchLhub = 0.5*(hubLpCyl[0]+hubLnCyl[0])*(hubLpCyl[1]-hubLnCyl[1])
+    pitchLcas = 0.5*(casLpCyl[0]+casLnCyl[0])*(casLpCyl[1]-casLnCyl[1])
+    pitchMhub = 0.5*(hubMpCyl[0]+hubMnCyl[0])*(hubMpCyl[1]-hubMnCyl[1])
+    pitchMcas = 0.5*(casMpCyl[0]+casMnCyl[0])*(casMpCyl[1]-casMnCyl[1])
+    pitchThub = 0.5*(hubTpCyl[0]+hubTnCyl[0])*(hubTpCyl[1]-hubTnCyl[1])
+    pitchTcas = 0.5*(casTpCyl[0]+casTnCyl[0])*(casTpCyl[1]-casTnCyl[1])
     # lengths, number of cells, grading --> cell sizes in middle
     # account for endwall BLs but not blade ones, since M blade points
     # are already pushed in
@@ -3362,19 +3366,37 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     # Now for tangential grading:
     dtMiddle = drMiddle/additionalTangentialRefine  # Target AR = 1 for the middle of the passage with additional refinement = 1
     # now need to get tCells (start work on tangential grading)
-    tLen = 0.5*(pitchH + pitchC) / 2
+    pitchMidPassageMidChord = 0.5*(pitchMhub + pitchMcas)
+    tLen = pitchMidPassageMidChord / 2
     tCells = np.round(fsolve(lambda n: -gTan*tLen/dtMiddle + (1-gTan**(n/(n-1)))/(1-gTan**(1/(n-1))), 2))
     dtOuter = dtMiddle / gTan
     tExpRatio = gTan ** (1 / (tCells -1))
     # tangential points is double this as it covers full width
     ntan = int(tCells[0] * 2)
+    
     # Calculate blade BL number of cells, expansion ratio
     print('Calculating number of BL cells for blade...')
     print(f'Blade first BL cell size = {dy1Bla}')
     nBLcellsBlade, rBLcellsBlade = getNumBLCells(dy1Bla, dtOuter, delBla)
     gBLcellsBlade = rBLcellsBlade**(nBLcellsBlade - 1)
     print(f'Blade: {nBLcellsBlade} with r={rBLcellsBlade}, so g={gBLcellsBlade}')
-    
+
+    # Now that this is set, determine tangential grading ratio g
+    # at LE, midchord, and TE, for both hub and casing:
+    print('Determining updated tangential grading for hub/casing...')
+    gTanLhub = dtMiddle * (pitchLhub / pitchMidPassageMidChord) / dtOuter
+    gTanLcas = dtMiddle * (pitchLcas / pitchMidPassageMidChord) / dtOuter
+    gTanMhub = dtMiddle * (pitchMhub / pitchMidPassageMidChord) / dtOuter
+    gTanMcas = dtMiddle * (pitchMcas / pitchMidPassageMidChord) / dtOuter
+    gTanThub = dtMiddle * (pitchThub / pitchMidPassageMidChord) / dtOuter
+    gTanTcas = dtMiddle * (pitchTcas / pitchMidPassageMidChord) / dtOuter
+    print(f'LE, hub: g = {gTanLhub}')
+    print(f'midchord, hub: g = {gTanMhub}')
+    print(f'TE, hub: g = {gTanThub}')
+    print(f'LE, casing: g = {gTanLcas}')
+    print(f'midchord, casing: g = {gTanMcas}')
+    print(f'TE, casing: g = {gTanTcas}')
+
     # Axial grading parameters
     # for over-blade blocks, use same AR = 1 approach at mid-passage with additional refinement = 1
     # to define cell size
@@ -3510,8 +3532,6 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     axgrading3CPoffset = blockMeshGradDescriptorBuilder(pointFracsOffset3CP, 'axgrading3CPoffset')
     axgrading3CNoffset = blockMeshGradDescriptorBuilder(pointFracsOffset3CN, 'axgrading3CNoffset')
 
-    #ipdb.set_trace()
-
     # for up- and down-stream blocks, bring other known parameters
     # into play to determine correct number of cells
     # Just 2 parameters in play: mean expansion ratio of cells
@@ -3585,11 +3605,11 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     angleLim = 20  # degrees
     print(f'Calculating inlet/outlet tangential grading based on limiting cell line contraction angle of {angleLim} degrees...')
     # At hub:
-    gTanIhub = getTanGradingAtInletOutlet(0.5*pitchH, gTan, tExpRatio, ntan/2, angleLim, 0.5*(L1HP+L1HN))
-    gTanOhub = getTanGradingAtInletOutlet(0.5*pitchH, gTan, tExpRatio, ntan/2, angleLim, 0.5*(L4HP+L4HN))
+    gTanIhub = getTanGradingAtInletOutlet(0.5*pitchLhub, gTanLhub, tExpRatio, ntan/2, angleLim, 0.5*(L1HP+L1HN))
+    gTanOhub = getTanGradingAtInletOutlet(0.5*pitchThub, gTanThub, tExpRatio, ntan/2, angleLim, 0.5*(L4HP+L4HN))
     # At casing:
-    gTanIcas = getTanGradingAtInletOutlet(0.5*pitchC, gTan, tExpRatio, ntan/2, angleLim, 0.5*(L1CP+L1CN))
-    gTanOcas = getTanGradingAtInletOutlet(0.5*pitchC, gTan, tExpRatio, ntan/2, angleLim, 0.5*(L4CP+L4CN))
+    gTanIcas = getTanGradingAtInletOutlet(0.5*pitchLcas, gTanLcas, tExpRatio, ntan/2, angleLim, 0.5*(L1CP+L1CN))
+    gTanOcas = getTanGradingAtInletOutlet(0.5*pitchTcas, gTanTcas, tExpRatio, ntan/2, angleLim, 0.5*(L4CP+L4CN))
 
     # Produce output file
     # set file name
@@ -3617,7 +3637,13 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
 
     # Grading/cell counts    
     paramFile.write('gRad   {}; \n'.format(gRad))
-    paramFile.write('gTan   {}; \n'.format(gTan))
+    #paramFile.write('gTan   {}; \n'.format(gTan))
+    paramFile.write('gTanLhub   {}; \n'.format(gTanLhub))
+    paramFile.write('gTanLcas   {}; \n'.format(gTanLcas))
+    paramFile.write('gTanMhub   {}; \n'.format(gTanMhub))
+    paramFile.write('gTanMcas   {}; \n'.format(gTanMcas))
+    paramFile.write('gTanThub   {}; \n'.format(gTanThub))
+    paramFile.write('gTanTcas   {}; \n'.format(gTanTcas))
 
     paramFile.write('ntan   {}; \n'.format(ntan))
     paramFile.write('nax1   {}; \n'.format(nax1))
@@ -3820,9 +3846,9 @@ def main() -> int:
     LrefCas = 178.0  # input length units (cannot be calculated because it depends on components outside domain)
     LrefBla = 35.0  # input length units (JD: this should be calculated = mean chord)
     muref = 1.8e-5  # base SI units (kg/(m*s))
-    yPlusHub = 100
-    yPlusCas = 100
-    yPlusBla = 100
+    yPlusHub = 2  # 100
+    yPlusCas = 2  # 100
+    yPlusBla = 2  # 100
     # have option to calculate BL parameters based on above, or just directly
     # provide BL thickness and first cell size (input units)
     delHub = calcBLdelta(rhoref,Uref,LrefHub*scale,muref)/scale  # or just set a value (in input units)
@@ -3851,7 +3877,7 @@ def main() -> int:
     """ END INPUTS """
     
     # STL definition inputs, typically do not need to be modified:
-    STLoutput = 0  # determine whether STLs are written or not, primarily useful for debugging
+    STLoutput = 1  # determine whether STLs are written or not, primarily useful for debugging
     res = 30  # upstream and downstream extention resolution 
     passageRes = 360  # Resolution of points for a single passage 
     bladeRes = 400  # Increase resolution of underlying blade data 

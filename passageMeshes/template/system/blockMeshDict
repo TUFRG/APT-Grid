@@ -112,7 +112,12 @@ gRad 2;
 	// this number is 2, the cells at the midpoint
 	// of the passage  will be twice as large as the
 	// cells just outside the blade BLs.
-gTan 2;
+gTanLhub 1.216163833447631;
+gTanMhub 0.9373520251990343;
+gTanThub 1.116919291371999;
+gTanLcas 3.3074377918402313;
+gTanMcas 3.062647974800966;
+gTanTcas 3.278689033035514;
 gTanIhub 1.0;
 gTanOhub 1.0;
 gTanIcas 1.0;
@@ -376,9 +381,12 @@ radgradingO ($delHub $nBLcellsHub $gBLhub) (#eval{0.5*($spanO-$delHub-$delCas)} 
 	// on length imposed.
 tangradingIhub (0.5 0.5 $gTanIhub) (0.5 0.5 #eval{1/$gTanIhub});
 tangradingIcas (0.5 0.5 $gTanIcas) (0.5 0.5 #eval{1/$gTanIcas});
-tangradingL (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
-tangradingM (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
-tangradingT (0.5 0.5 $gTan) (0.5 0.5 #eval{1/$gTan});
+tangradingLhub (0.5 0.5 $gTanLhub) (0.5 0.5 #eval{1/$gTanLhub});
+tangradingMhub (0.5 0.5 $gTanMhub) (0.5 0.5 #eval{1/$gTanMhub});
+tangradingThub (0.5 0.5 $gTanThub) (0.5 0.5 #eval{1/$gTanThub});
+tangradingLcas (0.5 0.5 $gTanLcas) (0.5 0.5 #eval{1/$gTanLcas});
+tangradingMcas (0.5 0.5 $gTanMcas) (0.5 0.5 #eval{1/$gTanMcas});
+tangradingTcas (0.5 0.5 $gTanTcas) (0.5 0.5 #eval{1/$gTanTcas});
 tangradingOhub (0.5 0.5 $gTanOhub) (0.5 0.5 #eval{1/$gTanOhub});
 tangradingOcas (0.5 0.5 $gTanOcas) (0.5 0.5 #eval{1/$gTanOcas});
 
@@ -686,8 +694,8 @@ blocks
 	edgeGrading
 	(
 		($tangradingIhub)
-		($tangradingL)
-		($tangradingL)
+		($tangradingLhub)
+		($tangradingLcas)
 		($tangradingIcas)
         ($axgrading1HN)
 		($axgrading1HP)
@@ -704,10 +712,10 @@ blocks
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
-		($tangradingL)
-		($tangradingM)
-		($tangradingM)
-		($tangradingL)
+		($tangradingLhub)
+		($tangradingMhub)
+		($tangradingMcas)
+		($tangradingLcas)
         ($axgrading2HNoffset)
 		($axgrading2HPoffset)
 		($axgrading2CPoffset)
@@ -761,10 +769,10 @@ blocks
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
-		($tangradingM)
-		($tangradingT)
-		($tangradingT)
-		($tangradingM)
+		($tangradingMhub)
+		($tangradingThub)
+		($tangradingTcas)
+		($tangradingMcas)
         ($axgrading3HNoffset)
 		($axgrading3HPoffset)
 		($axgrading3CPoffset)
@@ -821,10 +829,10 @@ blocks
 //	simpleGrading (1 1 1)
 	edgeGrading
 	(
-		($tangradingT)
+		($tangradingThub)
 		($tangradingOhub)
 		($tangradingOcas)
-		($tangradingT)
+		($tangradingTcas)
         ($axgrading4HN)
 		($axgrading4HP)
 		($axgrading4CP)
