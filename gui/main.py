@@ -160,7 +160,7 @@ class AppState:
             "Nb": 20,
             "periodic": 0,
             "scale": 0.001,
-            "nrad": 40,
+            "nrad": 70,
 
             # Boundary Layer
             "rhoref": 1.2,
@@ -169,9 +169,9 @@ class AppState:
             "LrefCas": 178.0,
             "LrefBla": 35.0,
             "muref": 1.8e-5,
-            "yPlusHub": 5,
-            "yPlusCas": 5,
-            "yPlusBla": 5,
+            "yPlusHub": 2,
+            "yPlusCas": 2,
+            "yPlusBla": 2,
             "delHub": 0.0,
             "delCas": 0.0,
             "delBla": 0.0,
@@ -183,12 +183,12 @@ class AppState:
             # Mesh Tuning
             "gRad": 2,
             "gTan": 2,
-            "additionalTangentialRefine": 8,
+            "additionalTangentialRefine": 5,
             "dax1primeLE": 0.003,
             "rLE": 1.2,
             "dax1primeTE": 0.002,
             "rTE": 1.2,
-            "additionalAxialRefine": 2,
+            "additionalAxialRefine": 3.5,
             "rUpFar": 1.1,
             "rDnFar": 1.1,
 
