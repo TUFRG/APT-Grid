@@ -10,7 +10,7 @@ Authors:
     Tony Woo
     Jeff Defoe
 Started in 2024
-Active development ongoing as of May 2026
+Active development ongoing as of October 2026
 """
 
 import sys
@@ -25,6 +25,10 @@ import TransfiniteInterpolation as tf
 import findLastQuadPointFunction as fq  # F = fq.getFvertex(A, B, C, D, E, meridCurve)
 import subprocess
 import importlib
+from collections import namedtuple
+
+# Define named tuple globally
+gridParams = namedtuple('gridParams', 'nax1 g1HPfar g1HNfar g1CPfar g1CNfar g1HPclo g1HNclo g1CPclo g1CNclo f1HPclo f1HNclo f1CPclo f1CNclo nax4 g4HPfar g4HNfar g4CPfar g4CNfar g4HPclo g4HNclo g4CPclo g4CNclo f4HPclo f4HNclo f4CPclo f4CNclo')   
 
 # FUNCTION DEFINITIONS
 
@@ -341,11 +345,18 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
     #The hub and casing profiles needs to be closed.
     
     #I made changes here!!!
-    hub1 = mf.densify_curve_robust(hubBladeProfile, M -1)  
-    cas1 = mf.densify_curve_robust(casBladeProfile, M -1)
-    
-    hub2 = mf.densify_curve_robust(hubBladeProfile2, M -1)
-    cas2 = mf.densify_curve_robust(casBladeProfile2, M -1)
+
+    # JD: I commented out the 4 lines below and replaced them with
+    # the 4 after that 29 Sept 2026
+    # Removing a point was sometimes removing the LE
+    #hub1 = mf.densify_curve_robust(hubBladeProfile, M -1)  
+    #cas1 = mf.densify_curve_robust(casBladeProfile, M -1)
+    #hub2 = mf.densify_curve_robust(hubBladeProfile2, M -1)
+    #cas2 = mf.densify_curve_robust(casBladeProfile2, M -1)
+    hub1 = hubBladeProfile
+    cas1 = casBladeProfile
+    hub2 = hubBladeProfile2
+    cas2 = casBladeProfile2
     
     #Stacking blade for new Blade definition 
     if casIdx-2 > numOldProfiles:
@@ -387,11 +398,17 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
     else:
         newNsection = newNsection
     print(newNsection)
-    hub1 = np.insert(hub1, 0, hub1[-1], axis=0) #I need to guanrantee that this forms a close loop, initially this was ensured by splitting the curve.
-    cas1 = np.insert(cas1, 0, cas1[-1], axis=0)
+
+    # JD: commented out the lines below 29 Sept 2026
+    # I don't think there is any need to ensure about the
+    # closed loop because of how splitting is handled
+    # later on now.
+    #hub1 = np.insert(hub1, 0, hub1[-1], axis=0) #I need to guanrantee that this forms a close loop, initially this was ensured by splitting the curve.
+    #cas1 = np.insert(cas1, 0, cas1[-1], axis=0)
     # print(hub1[-1])
-    hub2 = np.insert(hub2, 0, hub2[-1], axis=0)
-    cas2 = np.insert(cas2, 0, cas2[-1], axis=0)    
+    #hub2 = np.insert(hub2, 0, hub2[-1], axis=0)
+    #cas2 = np.insert(cas2, 0, cas2[-1], axis=0)    
+    
     oldBlade1 = np.zeros([M, newNsection, 3])  # (theta, r, z)
     oldBlade2 = np.zeros([M, newNsection, 3])  # (theta, r, z)
     for f in range(newNsection):
@@ -3811,19 +3828,64 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
     # close file
     paramFile.close()
 
+    # assign variables to the named tuple output
+
+    return gridParams(nax1=nax1, g1HPfar=g1HPfar, g1HNfar=g1HNfar, g1CPfar=g1CPfar, g1CNfar=g1CNfar, g1HPclo=g1HPclo, g1HNclo=g1HNclo, g1CPclo=g1CPclo, g1CNclo=g1CNclo, f1HPclo=f1HPclo, f1HNclo=f1HNclo, f1CPclo=f1CPclo, f1CNclo=f1CNclo, nax4=nax4, g4HPfar=g4HPfar, g4HNfar=g4HNfar, g4CPfar=g4CPfar, g4CNfar=g4CNfar, g4HPclo=g4HPclo, g4HNclo=g4HNclo, g4CPclo=g4CPclo, g4CNclo=g4CNclo, f4HPclo=f4HPclo, f4HNclo=f4HNclo, f4CPclo=f4CPclo, f4CNclo=f4CNclo)
+
+
+def updatePassageParameters(dataPath, passageNum, nax1, g1HPfar, g1HNfar, g1CPfar, g1CNfar, g1HPclo, g1HNclo, g1CPclo, g1CNclo, f1HPclo, f1HNclo, f1CPclo, f1CNclo, nax4, g4HPfar, g4HNfar, g4CPfar, g4CNfar, g4HPclo, g4HNclo, g4CPclo, g4CNclo, f4HPclo, f4HNclo, f4CPclo, f4CNclo):
+
+    # set file name
+    dirPath = os.path.join(dataPath, 'passage'+str(passageNum))
+    os.makedirs(dirPath, exist_ok=True)
+    scriptFile = os.path.join(dataPath, 'passage'+str(passageNum), 'passageParameters')
+    # open file
+    paramFile = open(scriptFile, 'a')  # append
+
+    paramFile.write('nax1   {}; \n'.format(nax1))
+    paramFile.write('nax4   {}; \n'.format(nax4))
     
+    paramFile.write('g1HPfar   {}; \n'.format(g1HPfar))
+    paramFile.write('g1HNfar   {}; \n'.format(g1HNfar))
+    paramFile.write('g1CPfar   {}; \n'.format(g1CPfar))
+    paramFile.write('g1CNfar   {}; \n'.format(g1CNfar))
+    paramFile.write('g1HPclo   {}; \n'.format(g1HPclo))
+    paramFile.write('g1HNclo   {}; \n'.format(g1HNclo))
+    paramFile.write('g1CPclo   {}; \n'.format(g1CPclo))
+    paramFile.write('g1CNclo   {}; \n'.format(g1CNclo))
+    paramFile.write('f1HPclo   {}; \n'.format(f1HPclo))
+    paramFile.write('f1HNclo   {}; \n'.format(f1HNclo))
+    paramFile.write('f1CPclo   {}; \n'.format(f1CPclo))
+    paramFile.write('f1CNclo   {}; \n'.format(f1CNclo))
+
+    paramFile.write('g4HPfar   {}; \n'.format(g4HPfar))
+    paramFile.write('g4HNfar   {}; \n'.format(g4HNfar))
+    paramFile.write('g4CPfar   {}; \n'.format(g4CPfar))
+    paramFile.write('g4CNfar   {}; \n'.format(g4CNfar))
+    paramFile.write('g4HPclo   {}; \n'.format(g4HPclo))
+    paramFile.write('g4HNclo   {}; \n'.format(g4HNclo))
+    paramFile.write('g4CPclo   {}; \n'.format(g4CPclo))
+    paramFile.write('g4CNclo   {}; \n'.format(g4CNclo))
+    paramFile.write('f4HPclo   {}; \n'.format(f4HPclo))
+    paramFile.write('f4HNclo   {}; \n'.format(f4HNclo))
+    paramFile.write('f4CPclo   {}; \n'.format(f4CPclo))
+    paramFile.write('f4CNclo   {}; \n'.format(f4CNclo))
+
+    # close file
+    paramFile.close()
+
 def main() -> int:
     """ All the main blocks of the code get executed here """
 
     """ INPUTS: """
     # By Jeff Defoe -- more general input code
     dataPath = '../inputData/'
-    hubFileName = 'hub_TG.curve'
-    casFileName = 'casing_TG.curve'
-    bladeCurveFile = 'IGVBlade.curve'
+    hubFileName = 'reshapeHub.curve'
+    casFileName = 'reshapeCas.curve'
+    bladeCurveFile = 'sBlade.curve'
     outputPath = '../outputData/'
     Nb = 20  # number of blades in row
-    periodic = 1  # mode selection
+    periodic = 0  # mode selection
     
     # Grid generation tuning parameters
     percentVal = 0.04  # fraction of arclength of blades where we cut off to avoid odd cell sizes in blade-to-offset BL blocks
@@ -3838,12 +3900,12 @@ def main() -> int:
         # For example, if input data in mm, scale = 0.001
 
     # Grid generation inputs
-    nrad = 70  # Number of radial points outside endwall BLs
+    nrad = 58  # Number of radial points outside endwall BLs
     # optional BL definition parameters
     rhoref = 1.2  # base SI units (kg/m**3)
     Uref = 100.0  # base SI units (m/s)
-    LrefHub = 178.0  # input length units (cannot be calculated because it depends on components outside domain)
-    LrefCas = 178.0  # input length units (cannot be calculated because it depends on components outside domain)
+    LrefHub = 388.0  # input length units (cannot be calculated because it depends on components outside domain)
+    LrefCas = 388.0  # input length units (cannot be calculated because it depends on components outside domain)
     LrefBla = 35.0  # input length units (JD: this should be calculated = mean chord)
     muref = 1.8e-5  # base SI units (kg/(m*s))
     yPlusHub = 2  # 100
@@ -3863,21 +3925,21 @@ def main() -> int:
     # Tangential grading parameters
         # value = ratio of cell size at midpassage to cell size adjacent blade BLs
     gTan = 2  #2  # note: 4 gives a reasonable-looking grid
-    additionalTangentialRefine = 5  # 1 = no extra refinement. This is a factor on the midpassage cell size.
+    additionalTangentialRefine = 3 # 1 = no extra refinement. This is a factor on the midpassage cell size.
     # Axial clustering parameters
     # Leading/trailing edge clustering parameters
     dax1primeLE = 0.003  # This is for about half the blade, so 0.01 means 0.5% chord
-    rLE = 1.2  # expansion ratio for clustering of cells near the LE of the blades
+    rLE = 1.25  # expansion ratio for clustering of cells near the LE of the blades
     dax1primeTE = 0.002  # This is for about half the blade, so 0.01 means 0.5% chord
-    rTE = 1.2  # expansion ratio for clustering of cells near the LE of the blades
+    rTE = 1.25  # expansion ratio for clustering of cells near the LE of the blades
     # Up/downstream expansion ratios of cells further than 1/2 chord away from blades
-    additionalAxialRefine = 3.5  # 1 = no extra refinement. This is a factor on the midpassage cell size.
+    additionalAxialRefine = 4  # 1 = no extra refinement. This is a factor on the midpassage cell size.
     rUpFar = 1.1  # used such that values > 1 mean cells grow as we get further from blades
     rDnFar = 1.1  # used such that values > 1 mean cells grow as we get further from blades
     """ END INPUTS """
     
     # STL definition inputs, typically do not need to be modified:
-    STLoutput = 1  # determine whether STLs are written or not, primarily useful for debugging
+    STLoutput = 0  # determine whether STLs are written or not, primarily useful for debugging
     res = 30  # upstream and downstream extention resolution 
     passageRes = 360  # Resolution of points for a single passage 
     bladeRes = 400  # Increase resolution of underlying blade data 
@@ -3907,6 +3969,7 @@ def main() -> int:
     elif periodic == 0:
         # For periodic sector, get number of passages in sector
         passages = Nb
+        gridParamArray = np.empty(Nb, dtype=object)
         print(f'Operating in aperiodic blade row mode. Producing grid inputs for {Nb} passages.')
 
     # Load hub/casing data
@@ -3969,23 +4032,22 @@ def main() -> int:
             for i, j in np.ndindex(blade2.shape[:2]):
                 blade2[i, j, :] = RotMat @ blade1[i, j, :]
 
-
-        # plt.plot(blade1[:,10,0],blade1[:,10,1], label=str(a))
-        # continue
-        
         # Convert data from Cartesian to cylindrical
         blade1Cyl = CartToCyl(blade1)
         blade2Cyl = CartToCyl(blade2)
 
         # Ensure that the two set of blades are locally in (-pi, pi)
         blade1Cyl, blade2Cyl, thetaShift = centrePassage(blade1Cyl, blade2Cyl)
+        print(f'thetaShift = {thetaShift}')
 
         # Check that first and last blade profiles lie on or extend beyond hub/casing, adjust as needed
         blade1Cyl, blade2Cyl, nSections = trimProfilesToGasPath(blade1Cyl, blade2Cyl, hub, cas, res)
+
         # Now have the proper sections, proceed
         # Split blade curves at farthest-forward ("LE") and farthest-backward ("TE") points - split blade sides too
         blade1LECyl, blade1TECyl, blade1pCyl, blade1nCyl = getLETEandSplit(blade1Cyl, Nr)
         blade2LECyl, blade2TECyl, blade2pCyl, blade2nCyl = getLETEandSplit(blade2Cyl, Nr)
+       
         # Get meridional curves on interior sections from LE/TE to inlet/outlet
         meridCurve = getMeridCurve(blade1LECyl, blade2LECyl, blade1TECyl, blade2TECyl, blade1pCyl, blade2nCyl, hub, cas, res)
         # Find offset end vertices on each section, update blade sides to include midpoints
@@ -4283,7 +4345,9 @@ def main() -> int:
 
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
-        calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap, nElementsPerVar)
+        upDnBlockGridParams = calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap, nElementsPerVar)
+        if(not periodic):
+            gridParamArray[a] = upDnBlockGridParams
 
         if(STLoutput):
             # Define/write STLs
@@ -4292,11 +4356,53 @@ def main() -> int:
         else:
             print('STL output disabled.')
 
-    # plt.axis('equal')
-    # plt.legend()
-    # plt.show()
-    # bob = alice
+    # Ensure consistency for upstream/downstream blocks
+    # for aperiodic cases
+    if(not periodic):
+        nax1 = np.round(np.mean([vals.nax1 for vals in gridParamArray]))
+        g1HPfar = np.mean([vals.g1HPfar for vals in gridParamArray])
+        g1HNfar = np.mean([vals.g1HNfar for vals in gridParamArray])
+        g1CPfar = np.mean([vals.g1CPfar for vals in gridParamArray])
+        g1CNfar = np.mean([vals.g1CNfar for vals in gridParamArray])
+        g1HPclo = np.mean([vals.g1HPclo for vals in gridParamArray])
+        g1HNclo = np.mean([vals.g1HNclo for vals in gridParamArray])
+        g1CPclo = np.mean([vals.g1CPclo for vals in gridParamArray])
+        g1CNclo = np.mean([vals.g1CNclo for vals in gridParamArray])
+        f1HPclo = np.mean([vals.f1HPclo for vals in gridParamArray])
+        f1HNclo = np.mean([vals.f1HNclo for vals in gridParamArray])
+        f1CPclo = np.mean([vals.f1CPclo for vals in gridParamArray])
+        f1CNclo = np.mean([vals.f1CNclo for vals in gridParamArray])
+        nax4 = np.round(np.mean([vals.nax4 for vals in gridParamArray]))
+        g4HPfar = np.mean([vals.g4HPfar for vals in gridParamArray])
+        g4HNfar = np.mean([vals.g4HNfar for vals in gridParamArray])
+        g4CPfar = np.mean([vals.g4CPfar for vals in gridParamArray])
+        g4CNfar = np.mean([vals.g4CNfar for vals in gridParamArray])
+        g4HPclo = np.mean([vals.g4HPclo for vals in gridParamArray])
+        g4HNclo = np.mean([vals.g4HNclo for vals in gridParamArray])
+        g4CPclo = np.mean([vals.g4CPclo for vals in gridParamArray])
+        g4CNclo = np.mean([vals.g4CNclo for vals in gridParamArray])
+        f4HPclo = np.mean([vals.f4HPclo for vals in gridParamArray])
+        f4HNclo = np.mean([vals.f4HNclo for vals in gridParamArray])
+        f4CPclo = np.mean([vals.f4CPclo for vals in gridParamArray])
+        f4CNclo = np.mean([vals.f4CNclo for vals in gridParamArray])
+        # need to make P and N values exactly the same!
+        g1HPfar = g1HNfar = 0.5*(g1HPfar + g1HNfar)
+        g1CPfar = g1CNfar = 0.5*(g1CPfar + g1CNfar)
+        g1HPclo = g1HNclo = 0.5*(g1HPclo + g1HNclo)
+        g1CPclo = g1CNclo = 0.5*(g1CPclo + g1CNclo)
+        f1HPclo = f1HNclo = 0.5*(f1HPclo + f1HNclo)
+        f1CPclo = f1CNclo = 0.5*(f1CPclo + f1CNclo)
+        g4HPfar = g4HNfar = 0.5*(g4HPfar + g4HNfar)
+        g4CPfar = g4CNfar = 0.5*(g4CPfar + g4CNfar)
+        g4HPclo = g4HNclo = 0.5*(g4HPclo + g4HNclo)
+        g4CPclo = g4CNclo = 0.5*(g4CPclo + g4CNclo)
+        f4HPclo = f4HNclo = 0.5*(f4HPclo + f4HNclo)
+        f4CPclo = f4CNclo = 0.5*(f4CPclo + f4CNclo)
 
+        # Now re-write parameter files
+        for a in range(passages):
+            updatePassageParameters(outputPath, a, nax1, g1HPfar, g1HNfar, g1CPfar, g1CNfar, g1HPclo, g1HNclo, g1CPclo, g1CNclo, f1HPclo, f1HNclo, f1CPclo, f1CNclo, nax4, g4HPfar, g4HNfar, g4CPfar, g4CNfar, g4HPclo, g4HNclo, g4CPclo, g4CNclo, f4HPclo, f4HNclo, f4CPclo, f4CNclo)
+        
     return 0
 
 
