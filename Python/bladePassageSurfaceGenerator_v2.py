@@ -2648,6 +2648,7 @@ def getTanGradingAtInletOutlet(halfPitch, gTan, rTan, nhalf, angleLim, L):
         print(f'Grading ratio = {g}')
     return g
 
+
 def outerAxialGradingFunction(vars, dx1, dxMid, rfar, C, L, gclo):
     """ 6x6 equation solver for outer block axial grading """
     fclo, gfar, rclo, n, dxn, dxMidp1 = vars
@@ -3353,12 +3354,20 @@ def calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub
 
     # estimate midspan / midpassage radial cell size
     # get pitches at midpassage
-    pitchLhub = 0.5*(hubLpCyl[0]+hubLnCyl[0])*(hubLpCyl[1]-hubLnCyl[1])
-    pitchLcas = 0.5*(casLpCyl[0]+casLnCyl[0])*(casLpCyl[1]-casLnCyl[1])
-    pitchMhub = 0.5*(hubMpCyl[0]+hubMnCyl[0])*(hubMpCyl[1]-hubMnCyl[1])
-    pitchMcas = 0.5*(casMpCyl[0]+casMnCyl[0])*(casMpCyl[1]-casMnCyl[1])
-    pitchThub = 0.5*(hubTpCyl[0]+hubTnCyl[0])*(hubTpCyl[1]-hubTnCyl[1])
-    pitchTcas = 0.5*(casTpCyl[0]+casTnCyl[0])*(casTpCyl[1]-casTnCyl[1])
+    angPitchLhub = (hubLpCyl[1] - hubLnCyl[1])
+    angPitchLcas = (casLpCyl[1] - casLnCyl[1])
+    angPitchMhub = (hubMpCyl[1] - hubMnCyl[1])
+    angPitchMcas = (casMpCyl[1] - casMnCyl[1])
+    angPitchThub = (hubTpCyl[1] - hubTnCyl[1])
+    angPitchTcas = (casTpCyl[1] - casTnCyl[1])
+    
+    pitchLhub = 0.5 * (hubLpCyl[0] + hubLnCyl[0]) * np.where(angPitchLhub < 0, angPitchLhub + 2 * np.pi, angPitchLhub)
+    pitchLcas = 0.5 * (casLpCyl[0] + casLnCyl[0]) * np.where(angPitchLcas < 0, angPitchLcas + 2 * np.pi, angPitchLcas)
+    pitchMhub = 0.5 * (hubMpCyl[0] + hubMnCyl[0]) * np.where(angPitchMhub < 0, angPitchMhub + 2 * np.pi, angPitchMhub)
+    pitchMcas = 0.5 * (casMpCyl[0] + casMnCyl[0]) * np.where(angPitchMcas < 0, angPitchMcas + 2 * np.pi, angPitchMcas)
+    pitchThub = 0.5 * (hubTpCyl[0] + hubTnCyl[0]) * np.where(angPitchThub < 0, angPitchThub + 2 * np.pi, angPitchThub)
+    pitchTcas = 0.5 * (casTpCyl[0] + casTnCyl[0]) * np.where(angPitchTcas < 0, angPitchTcas + 2 * np.pi, angPitchTcas)
+
     # lengths, number of cells, grading --> cell sizes in middle
     # account for endwall BLs but not blade ones, since M blade points
     # are already pushed in
@@ -3995,7 +4004,7 @@ def main() -> int:
         blade1num = a
         blade2num = a + 1
         # ensure if we're on the last blade that the next blade is the first one
-        if blade2num >= (passages - 1):
+        if blade2num > (passages - 1):
             blade2num = 0
         # Load in blade data (2 blades per passage)
         if periodic == 1:
