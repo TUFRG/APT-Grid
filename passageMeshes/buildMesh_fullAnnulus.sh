@@ -38,5 +38,6 @@ for j in $(seq 0 "$passagem2"); do
 	cd ..
 done
 cd passage0
-stitchMesh -overwrite pCyclic nCyclic
+stitchMesh -overwrite pCyclic$passagem1 nCyclic0
 rm -rf 0
+
