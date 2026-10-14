@@ -740,7 +740,7 @@ class BoundaryLayerPage(BasePage):
         )
 
         reference_fields = [
-            ("Reference density (kg/mÂ³)", "rhoref"),
+            ("Reference density (kg/mÃƒâ€šÃ‚Â³)", "rhoref"),
             ("Reference velocity (m/s)", "Uref"),
             ("Hub reference length (m)", "LrefHub"),
             ("Casing reference length (m)", "LrefCas"),
@@ -1560,7 +1560,7 @@ class RunPage(BasePage):
 
         self.run_button = tk.Button(
             button_frame,
-            text="â–¶  Generate Surfaces",
+            text="Generate Surfaces",
             command=self.run_backend,
             font=("Segoe UI", 10, "bold"),
             fg="white",
@@ -1578,7 +1578,7 @@ class RunPage(BasePage):
 
         self.bash_button = tk.Button(
             button_frame,
-            text="â–¶  Build OpenFOAM Mesh",
+            text="Build OpenFOAM Mesh",
             command=self.run_bash_script,
             font=("Segoe UI", 10, "bold"),
             fg="white",
@@ -1731,13 +1731,13 @@ class RunPage(BasePage):
                 )
         else:
             self.run_button.configure(
-                text="â–¶  Generate Surfaces",
+                text="Generate Surfaces",
                 state="normal",
                 fg="white",
                 bg=MAIN_BLUE
             )
             self.bash_button.configure(
-                text="â–¶  Build OpenFOAM Mesh",
+                text="Build OpenFOAM Mesh",
                 state="normal",
                 fg="white",
                 bg=MAIN_BLUE,
@@ -1797,7 +1797,7 @@ class RunPage(BasePage):
         if missing:
             messagebox.showerror(
                 "Missing Run Inputs",
-                "Please fill in the following fields before running:\n\n" + "\n".join(f"â€¢ {item}" for item in missing)
+                "Please fill in the following fields before running:\n\n" + "\n".join(f"ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {item}" for item in missing)
             )
             return False
 
