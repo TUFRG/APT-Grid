@@ -160,13 +160,13 @@ class AppState:
             "Nb": 20,
             "periodic": 0,
             "scale": 0.001,
-            "nrad": 70,
+            "nrad": 58,
 
             # Boundary Layer
             "rhoref": 1.2,
             "Uref": 100.0,
-            "LrefHub": 178.0,
-            "LrefCas": 178.0,
+            "LrefHub": 388.0,
+            "LrefCas": 388.0,
             "LrefBla": 35.0,
             "muref": 1.8e-5,
             "yPlusHub": 2,
@@ -183,12 +183,12 @@ class AppState:
             # Mesh Tuning
             "gRad": 2,
             "gTan": 2,
-            "additionalTangentialRefine": 5,
+            "additionalTangentialRefine": 3,
             "dax1primeLE": 0.003,
-            "rLE": 1.2,
+            "rLE": 1.25,
             "dax1primeTE": 0.002,
-            "rTE": 1.2,
-            "additionalAxialRefine": 3.5,
+            "rTE": 1.25,
+            "additionalAxialRefine": 4,
             "rUpFar": 1.1,
             "rDnFar": 1.1,
 
@@ -740,7 +740,7 @@ class BoundaryLayerPage(BasePage):
         )
 
         reference_fields = [
-            ("Reference density (kg/m³)", "rhoref"),
+            ("Reference density (kg/mÂ³)", "rhoref"),
             ("Reference velocity (m/s)", "Uref"),
             ("Hub reference length (m)", "LrefHub"),
             ("Casing reference length (m)", "LrefCas"),
@@ -1560,7 +1560,7 @@ class RunPage(BasePage):
 
         self.run_button = tk.Button(
             button_frame,
-            text="▶  Generate Surfaces",
+            text="â–¶  Generate Surfaces",
             command=self.run_backend,
             font=("Segoe UI", 10, "bold"),
             fg="white",
@@ -1578,7 +1578,7 @@ class RunPage(BasePage):
 
         self.bash_button = tk.Button(
             button_frame,
-            text="▶  Build OpenFOAM Mesh",
+            text="â–¶  Build OpenFOAM Mesh",
             command=self.run_bash_script,
             font=("Segoe UI", 10, "bold"),
             fg="white",
@@ -1731,13 +1731,13 @@ class RunPage(BasePage):
                 )
         else:
             self.run_button.configure(
-                text="▶  Generate Surfaces",
+                text="â–¶  Generate Surfaces",
                 state="normal",
                 fg="white",
                 bg=MAIN_BLUE
             )
             self.bash_button.configure(
-                text="▶  Build OpenFOAM Mesh",
+                text="â–¶  Build OpenFOAM Mesh",
                 state="normal",
                 fg="white",
                 bg=MAIN_BLUE,
@@ -1797,7 +1797,7 @@ class RunPage(BasePage):
         if missing:
             messagebox.showerror(
                 "Missing Run Inputs",
-                "Please fill in the following fields before running:\n\n" + "\n".join(f"• {item}" for item in missing)
+                "Please fill in the following fields before running:\n\n" + "\n".join(f"â€¢ {item}" for item in missing)
             )
             return False
 
