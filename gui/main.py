@@ -19,11 +19,9 @@ WINDOW_SIZE = "1280x800"
 SIDEBAR_WIDTH = 126
 LOGO_FILENAME = "logo.png"
 ICONS_FOLDER = "icons"
-TOPBAR_HEIGHT = 120
 SECOND_LOGO_FILENAME = "second_logo.png"
 SIDEBAR_BG = "#eef7ff"
 CONTENT_BG = "#f8fbff"
-TOPBAR_BG = "#eaf5ff"
 MAIN_BLUE = "#005298"
 
 
@@ -33,6 +31,13 @@ PARAMETER_HELP_TEXT = {
     "periodic": "",
     "scale": "",
     "nrad": "",
+    "STLoutput": (
+        "Writes an STL surface file for each passage boundary (hub, casing, "
+        "blade, inlet/outlet, etc.) to the output folder. These STL files are "
+        "required by the OpenFOAM mesh-building step (Build OpenFOAM Mesh), "
+        "so leave this enabled unless you only need the passageParameters "
+        "file and want a faster, smaller-output run."
+    ),
 
     # Boundary Layer reference inputs
     "rhoref": "",
@@ -163,6 +168,7 @@ class AppState:
             "periodic": 0,
             "scale": 0.001,
             "nrad": 58,
+            "STLoutput": 1,
 
             # Boundary Layer
             "rhoref": 1.2,
@@ -224,7 +230,7 @@ class AppState:
         ])
 
     def reset_basic_setup(self):
-        self.reset_group(["Nb", "periodic", "scale", "nrad"])
+        self.reset_group(["Nb", "periodic", "scale", "nrad", "STLoutput"])
 
     def reset_boundary_layer(self):
         self.reset_group([
@@ -318,9 +324,9 @@ class HomePage(BasePage):
         self.body.columnconfigure(0, weight=1)
         self.body.configure(padding=(0, 30, 0, 14))
 
-        self.body.rowconfigure(0, weight=1)
+        self.body.rowconfigure(0, weight=0)
         self.body.rowconfigure(1, weight=0)
-        self.body.rowconfigure(2, weight=2)
+        self.body.rowconfigure(2, weight=1)
         self.body.rowconfigure(3, weight=0)
 
         top_spacer = tk.Frame(self.body, bg=CONTENT_BG)
@@ -549,11 +555,12 @@ class BasicSetupPage(BasePage):
         self.periodic_var = tk.IntVar()
         self.scale_var = tk.DoubleVar()
         self.nrad_var = tk.IntVar()
+        self.stl_output_var = tk.IntVar()
 
         self._build_page()
         self.load_state()
 
-        for var in [self.blades_var, self.periodic_var, self.scale_var, self.nrad_var]:
+        for var in [self.blades_var, self.periodic_var, self.scale_var, self.nrad_var, self.stl_output_var]:
             var.trace_add("write", self.update_state)
 
     def _build_page(self):
@@ -606,6 +613,18 @@ class BasicSetupPage(BasePage):
             takefocus=False
         ).grid(row=4, column=1, sticky="w", pady=12)
 
+        stl_output_label = self._create_parameter_label(content, "Write STL files", "STLoutput")
+        stl_output_label.grid(row=5, column=0, sticky="w", padx=(0, 24), pady=12)
+
+        ttk.Checkbutton(
+            content,
+            text="Enabled",
+            variable=self.stl_output_var,
+            onvalue=1,
+            offvalue=0,
+            takefocus=False
+        ).grid(row=5, column=1, sticky="w", pady=12)
+
         action_bar = ttk.Frame(self.body, style="Content.TFrame")
         action_bar.grid(row=1, column=0, sticky="se", pady=(28, 0))
 
@@ -625,6 +644,7 @@ class BasicSetupPage(BasePage):
             self.app.state.set("periodic", int(self.periodic_var.get()))
             self.app.state.set("scale", self.scale_var.get())
             self.app.state.set("nrad", self.nrad_var.get())
+            self.app.state.set("STLoutput", int(self.stl_output_var.get()))
         except tk.TclError:
             pass
 
@@ -639,6 +659,7 @@ class BasicSetupPage(BasePage):
         self.periodic_var.set(int(self.app.state.get("periodic", 0)))
         self.scale_var.set(self.app.state.get("scale"))
         self.nrad_var.set(self.app.state.get("nrad"))
+        self.stl_output_var.set(int(self.app.state.get("STLoutput", 1)))
 
         self.loading_state = False
 
@@ -2040,10 +2061,10 @@ class AptGridApp(tk.Tk):
         except tk.TclError: pass
         style.configure("Sidebar.TFrame", background=SIDEBAR_BG)
         style.configure("Content.TFrame", background=CONTENT_BG)
-        style.configure("Topbar.TFrame", background=TOPBAR_BG)
+        # The topbar shares the page background so it reads as part of the
+        # page, not as a separate colored strip across the top.
+        style.configure("Topbar.TFrame", background=CONTENT_BG)
         style.configure("Header.TLabel", background=SIDEBAR_BG)
-        style.configure("TopbarLogo.TLabel", background=TOPBAR_BG)
-        style.configure("TopbarTitle.TLabel", font=("Segoe UI", 24, "bold"), background=TOPBAR_BG, foreground=MAIN_BLUE)
         style.configure("PageTitle.TLabel", font=("Segoe UI", 24, "bold"), background=CONTENT_BG, foreground=MAIN_BLUE)
         style.configure("Section.TLabel", font=("Segoe UI", 15, "bold"), background=CONTENT_BG, foreground=MAIN_BLUE)
         style.configure("Field.TLabel", font=("Segoe UI", 11), background=CONTENT_BG)
@@ -2087,7 +2108,18 @@ class AptGridApp(tk.Tk):
         self.content = ttk.Frame(self, style="Content.TFrame", padding=(16, 16, 16, 16))
         self.content.grid(row=0, column=1, sticky="nsew")
         self.content.columnconfigure(0, weight=1)
-        self.content.rowconfigure(0, weight=1)
+        # Row 0 is a reserved strip for the branding logos (natural height,
+        # not overlaid via place()), row 1 holds whichever page is showing.
+        self.content.rowconfigure(0, weight=0)
+        self.content.rowconfigure(1, weight=1)
+
+        self.topbar = ttk.Frame(self.content, style="Topbar.TFrame")
+        self.topbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+
+        self.page_container = ttk.Frame(self.content, style="Content.TFrame")
+        self.page_container.grid(row=1, column=0, sticky="nsew")
+        self.page_container.columnconfigure(0, weight=1)
+        self.page_container.rowconfigure(0, weight=1)
 
     def _load_nav_icon(self, filename):
         path = os.path.join(os.path.dirname(__file__), ICONS_FOLDER, filename)
@@ -2102,6 +2134,12 @@ class AptGridApp(tk.Tk):
         return None
 
     def _build_floating_logos(self):
+        # Packed into self.topbar (a reserved row above the page content --
+        # see _build_layout) rather than placed at fixed pixel offsets over
+        # the whole window. A hardcoded x/y overlay looked fine on Windows
+        # but drifted into page content (e.g. the Run page's buttons) under
+        # different font metrics/DPI on native Linux, since nothing stopped
+        # page content from rendering into that same screen space.
         first_logo_path = os.path.join(
             os.path.dirname(__file__),
             ICONS_FOLDER,
@@ -2114,24 +2152,43 @@ class AptGridApp(tk.Tk):
             SECOND_LOGO_FILENAME
         )
 
+        # Pack right-to-left: University of Windsor (rightmost) first,
+        # then TUFRG to its left -- matches the original left-to-right
+        # visual order (TUFRG, then University of Windsor).
+        if os.path.exists(second_logo_path):
+            try:
+                self.floating_logo_2 = tk.PhotoImage(file=second_logo_path)
+                self.floating_logo_2 = self.floating_logo_2.subsample(3, 3)
+
+                logo_2_label = tk.Label(
+                    self.topbar,
+                    image=self.floating_logo_2,
+                    bg=CONTENT_BG,
+                    borderwidth=0,
+                    cursor="hand2"
+                )
+                logo_2_label.pack(side="right", padx=(0, 20), pady=10)
+                logo_2_label.bind(
+                    "<Button-1>",
+                    lambda event: webbrowser.open("https://www.uwindsor.ca/")
+                )
+
+            except Exception as e:
+                print("Second logo failed:", e)
+
         if os.path.exists(first_logo_path):
             try:
                 self.floating_logo_1 = tk.PhotoImage(file=first_logo_path)
                 self.floating_logo_1 = self.floating_logo_1.subsample(6, 6)
 
                 logo_1_label = tk.Label(
-                    self,
+                    self.topbar,
                     image=self.floating_logo_1,
                     bg=CONTENT_BG,
                     borderwidth=0,
                     cursor="hand2"
                 )
-                logo_1_label.place(
-                    relx=1.0,
-                    x=-260,
-                    y=26,
-                    anchor="ne"
-                )
+                logo_1_label.pack(side="right", padx=(0, 20), pady=10)
                 logo_1_label.bind(
                     "<Button-1>",
                     lambda event: webbrowser.open(
@@ -2141,32 +2198,6 @@ class AptGridApp(tk.Tk):
 
             except Exception as e:
                 print("First logo failed:", e)
-
-        if os.path.exists(second_logo_path):
-            try:
-                self.floating_logo_2 = tk.PhotoImage(file=second_logo_path)
-                self.floating_logo_2 = self.floating_logo_2.subsample(3, 3)
-
-                logo_2_label = tk.Label(
-                    self,
-                    image=self.floating_logo_2,
-                    bg=CONTENT_BG,
-                    borderwidth=0,
-                    cursor="hand2"
-                )
-                logo_2_label.place(
-                    relx=1.0,
-                    x=-30,
-                    y=10,
-                    anchor="ne"
-                )
-                logo_2_label.bind(
-                    "<Button-1>",
-                    lambda event: webbrowser.open("https://www.uwindsor.ca/")
-                )
-
-            except Exception as e:
-                print("Second logo failed:", e)
 
     def _draw_rounded_rect(self, canvas, x1, y1, x2, y2, radius, fill, outline=""):
         points = [
@@ -2234,7 +2265,7 @@ class AptGridApp(tk.Tk):
 
             self.nav_buttons[name] = button
 
-            page = page_class(self.content, self)
+            page = page_class(self.page_container, self)
             page.grid(row=0, column=0, sticky="nsew")
             self.pages[name] = page
 
