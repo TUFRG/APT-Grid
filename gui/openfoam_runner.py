@@ -1,24 +1,11 @@
-"""
-OpenFOAM/WSL command-building for the GUI.
-
-Split out of gui/main.py's RunPage so the bash/WSL glue code (building
-shell commands, staging paths for WSL, writing temp scripts) isn't mixed
-in with Tkinter widget code. Nothing in this module touches Tk or GUI
-state directly -- callers pass in the project/output folders explicitly.
-"""
-
 import os
 import shutil
 import subprocess
 
 
 class OpenFoamRunner:
-    """Builds the WSL/bash commands used to drive OpenFOAM mesh builds."""
-
     def __init__(self, project_folder):
         self.project_folder = project_folder
-
-    # -- path helpers --------------------------------------------------
 
     def get_passage_meshes_folder(self):
         return os.path.join(self.project_folder, "passageMeshes")
@@ -114,8 +101,6 @@ class OpenFoamRunner:
             "elif [ -f /usr/lib/openfoam/openfoam12/etc/bashrc ]; then . /usr/lib/openfoam/openfoam12/etc/bashrc; "
             "else true; fi"
         )
-
-    # -- shell command templates ----------------------------------------
 
     def single_passage_shell_command(self, project_folder, output_folder, passage_name="passage0"):
         passage_meshes_folder = self.posix_join(project_folder, "passageMeshes")

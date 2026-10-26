@@ -309,8 +309,6 @@ class HomePage(BasePage):
         self._build_page()
 
     def _on_destroy(self, event=None):
-        # Stop the pending tagline-typing callback if the app is closed
-        # mid-animation, so it doesn't fire against a destroyed widget.
         if event is not None and event.widget is not self:
             return
         if self.tagline_after_id is not None:
@@ -398,8 +396,6 @@ class HomePage(BasePage):
         )
         start_button.grid(row=3, column=0)
 
-        # Spacer row keeps the footer pinned near the bottom of the page,
-        # while matching top_spacer (row 0) to keep the hero vertically centered.
         bottom_spacer = tk.Frame(self.body, bg=CONTENT_BG)
         bottom_spacer.grid(row=2, column=0, sticky="nsew")
 
@@ -430,8 +426,6 @@ class HomePage(BasePage):
             cursor = "|" if self.tagline_animation_index < len(self.tagline_full_text) else ""
             self.tagline_label.configure(text=shown_text + cursor)
         except tk.TclError:
-            # Widget was destroyed (e.g. app closed) while this callback
-            # was already queued -- nothing left to animate.
             self.tagline_after_id = None
             return
 
@@ -530,9 +524,6 @@ class FilesPage(BasePage):
                 self.file_vars[key].set(selected_filename)
 
                 if key in ["hubFileName", "casFileName", "bladeCurveFile"]:
-                    # Only auto-fill the shared input folder if it hasn't been
-                    # set yet, so picking curve files from different folders
-                    # doesn't silently overwrite an already-chosen dataPath.
                     if not self.file_vars["dataPath"].get():
                         self.file_vars["dataPath"].set(selected_folder)
 
@@ -2061,8 +2052,6 @@ class AptGridApp(tk.Tk):
         except tk.TclError: pass
         style.configure("Sidebar.TFrame", background=SIDEBAR_BG)
         style.configure("Content.TFrame", background=CONTENT_BG)
-        # The topbar shares the page background so it reads as part of the
-        # page, not as a separate colored strip across the top.
         style.configure("Topbar.TFrame", background=CONTENT_BG)
         style.configure("Header.TLabel", background=SIDEBAR_BG)
         style.configure("PageTitle.TLabel", font=("Segoe UI", 24, "bold"), background=CONTENT_BG, foreground=MAIN_BLUE)
@@ -2108,8 +2097,6 @@ class AptGridApp(tk.Tk):
         self.content = ttk.Frame(self, style="Content.TFrame", padding=(16, 16, 16, 16))
         self.content.grid(row=0, column=1, sticky="nsew")
         self.content.columnconfigure(0, weight=1)
-        # Row 0 is a reserved strip for the branding logos (natural height,
-        # not overlaid via place()), row 1 holds whichever page is showing.
         self.content.rowconfigure(0, weight=0)
         self.content.rowconfigure(1, weight=1)
 
@@ -2134,12 +2121,6 @@ class AptGridApp(tk.Tk):
         return None
 
     def _build_floating_logos(self):
-        # Packed into self.topbar (a reserved row above the page content --
-        # see _build_layout) rather than placed at fixed pixel offsets over
-        # the whole window. A hardcoded x/y overlay looked fine on Windows
-        # but drifted into page content (e.g. the Run page's buttons) under
-        # different font metrics/DPI on native Linux, since nothing stopped
-        # page content from rendering into that same screen space.
         first_logo_path = os.path.join(
             os.path.dirname(__file__),
             ICONS_FOLDER,
@@ -2152,9 +2133,6 @@ class AptGridApp(tk.Tk):
             SECOND_LOGO_FILENAME
         )
 
-        # Pack right-to-left: University of Windsor (rightmost) first,
-        # then TUFRG to its left -- matches the original left-to-right
-        # visual order (TUFRG, then University of Windsor).
         if os.path.exists(second_logo_path):
             try:
                 self.floating_logo_2 = tk.PhotoImage(file=second_logo_path)

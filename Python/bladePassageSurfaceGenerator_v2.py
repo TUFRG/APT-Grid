@@ -3919,17 +3919,6 @@ def file_name_only(path_or_name):
 
 
 def strip_aperiodic_blade_suffix(blade_curve_file):
-    """
-    In aperiodic mode, each passage's blade file path is built by appending
-    the passage index (0..Nb-1) directly onto bladeCurveFile, e.g.
-    "sBlade.curve" + "0" -> "sBlade.curve0". If bladeCurveFile is instead
-    set to one of the already-indexed files itself (e.g. picked via the GUI
-    file browser, which naturally shows "sBlade.curve0" etc. as the
-    options) that index gets appended a second time ("sBlade.curve00"),
-    and every passage's file lookup fails. Strip a trailing run of digits
-    so bladeCurveFile always ends up as just the shared prefix, regardless
-    of which indexed file (if any) the value came from.
-    """
     return blade_curve_file.rstrip("0123456789")
 
 
@@ -4056,8 +4045,6 @@ def main() -> int:
         periodic =1
 
     if periodic == 0:
-        # Aperiodic mode: bladeCurveFile must be the shared prefix, not one
-        # of the indexed per-passage files -- see strip_aperiodic_blade_suffix.
         stripped_bladeCurveFile = strip_aperiodic_blade_suffix(bladeCurveFile)
         if stripped_bladeCurveFile != bladeCurveFile:
             print(
@@ -4119,9 +4106,6 @@ def main() -> int:
     rUpFar = get_float(config, "rUpFar", 1.1)
     rDnFar = get_float(config, "rDnFar", 1.1)
 
-    # Whether STL surface files are written per passage. These are required
-    # by the OpenFOAM mesh-building step, so default to on; the GUI exposes
-    # this as "Write STL files" on the Basic Setup page.
     STLoutput = get_bool(config.get("STLoutput", True), True)
 
     print("Using run settings from GUI/config:")
@@ -4137,7 +4121,7 @@ def main() -> int:
     print(f"  STLoutput: {STLoutput}")
     """ END INPUTS """
 
-    # Other STL definition inputs, typically do not need to be modified:
+    # STL definition inputs, typically do not need to be modified:
     res = 30  # upstream and downstream extention resolution
     passageRes = 360  # Resolution of points for a single passage
     bladeRes = 400  # Increase resolution of underlying blade data
