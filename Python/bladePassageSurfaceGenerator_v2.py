@@ -45,6 +45,69 @@ def CartToCyl(arr):
     return arrCyl
 
 
+def interpolateThetaToBoundary(lowerProfile, upperProfile, boundaryZR):
+    """
+    lowerProfile: (M, 3), cylindrical (theta, r, z)
+    upperProfile: (M, 3), cylindrical (theta, r, z)
+    boundaryZR:   (M, 2), meridional (z, r)
+    Returns: thetaBoundary: (M,), bracketed:True if all interpolation fractions are in [0, 1], maxDistance: Maximum meridional projection distance
+    """
+    A = lowerProfile[:, [2, 1]] #The profile that lies inside the domain
+    B = upperProfile[:, [2, 1]] #The profile that lies outside the domain
+    C = boundaryZR #The profile on the gas path 
+    AB = B - A #simple vector addition and subtraction 
+    AC = C - A
+    length = np.sum(AB**2, axis=1) #magnitude of distance 
+    if np.any(length <= 1e-20): #This means the profiles are basically the same or lie on each other, not useful 
+        raise ValueError("Degenerate spanwise interpolation segment")
+    #Fraction between the two original profiles
+    t = np.sum(AC * AB, axis=1) / length
+    #Check the whole profile, not individual chordwise points
+    bracketed = np.all((t >= -1e-10) & (t <= 1 + 1e-10))
+    if not bracketed:
+        return None, False, np.nan
+    #Correct angular branch before interpolation
+    thetaA = lowerProfile[:, 0]
+    thetaB = thetaA + ((upperProfile[:, 0] - thetaA + np.pi) % (2*np.pi) - np.pi) #move theta back to -pi to pi
+    thetaBoundary = thetaA + t * (thetaB - thetaA) #linear interpolation. This avoids the problem of using an interpolation function
+                                                    #and the need for z to always increase or all that other nonsense 
+    #check the distance to original spanwise segments
+    projected = A + t[:, None] * AB
+    maxDistance = np.max(np.linalg.norm(projected - C, axis=1))
+    return thetaBoundary, bracketed, maxDistance
+
+
+def reconstructBoundaryProfile(profile, boundaryZR, idx, boundary):
+    """
+    Get the full blade profile on the hub or casing.
+    """
+    M, S, _ = profile.shape
+    boundaryProfile = np.zeros((M, 3))
+    boundaryProfile[:, [2, 1]] = boundaryZR
+    if boundary == "hub":
+        lowerIdx = idx - 2
+        upperIdx = idx - 1
+        fallbackIdx = upperIdx
+    elif boundary == "casing":
+        lowerIdx = idx - 2
+        upperIdx = idx - 1
+        fallbackIdx = lowerIdx
+    else:
+        raise ValueError("boundary must be 'hub' or 'casing'")
+    # Check whether both original profiles exist
+    if 0 <= lowerIdx < upperIdx < S:
+        theta, bracketed, maxDistance = interpolateThetaToBoundary(profile[:, lowerIdx, :],profile[:, upperIdx, :],boundaryZR)
+        if bracketed:
+            boundaryProfile[:, 0] = theta
+            print(f"{boundary}: interpolated (maximum projection error = {maxDistance:.6e})")
+            return boundaryProfile
+    # Extrusion fallback
+    fallbackIdx = int(np.clip(fallbackIdx, 0, S - 1))
+    boundaryProfile[:, 0] = profile[:, fallbackIdx, 0]
+    print(f"{boundary}: extrusion")
+    return boundaryProfile
+
+
 def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
     """
     Trims cylindrical coordinate profile sets to lie between
@@ -112,14 +175,14 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
         leCasExtn = np.array([LE2D[-1][0]-res*res, (LE2D[-1][0]-res*res)*leCasSlope + leCasInterX])
         
     if teHubSlope > 0:
-        teHubExtn = np.array([TE2D[0][1]-res*res, (TE2D[0][1]-res*res)*teHubSlope + teHubInterX])
+        teHubExtn = np.array([TE2D[0][0]-res*res, (TE2D[0][0]-res*res)*teHubSlope + teHubInterX])
     else:
-        teHubExtn = np.array([TE2D[0][1]+res*res, (TE2D[0][1]+res*res)*teHubSlope + teHubInterX])
+        teHubExtn = np.array([TE2D[0][0]+res*res, (TE2D[0][0]+res*res)*teHubSlope + teHubInterX])
         
     if teCasSlope > 0:
-        teCasExtn = np.array([TE2D[-1][1]+res*res, (TE2D[-1][1]+res*res)*teCasSlope + teCasInterX])
+        teCasExtn = np.array([TE2D[-1][0]+res*res, (TE2D[-1][0]+res*res)*teCasSlope + teCasInterX])
     else:
-        teCasExtn = np.array([TE2D[-1][1]-res*res, (TE2D[-1][1]-res*res)*teCasSlope + teCasInterX])
+        teCasExtn = np.array([TE2D[-1][0]-res*res, (TE2D[-1][0]-res*res)*teCasSlope + teCasInterX])
 
     # repeat for profile 2
     LE2D2 = np.zeros((numOldProfiles,2))
@@ -157,14 +220,14 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
         leCasExtn2 = np.array([LE2D2[-1][0]-res*res, (LE2D2[-1][0]-res*res)*leCasSlope2 + leCasInterX2])
         
     if teHubSlope2 > 0:
-        teHubExtn2 = np.array([TE2D2[0][1]-res*res, (TE2D2[0][1]-res*res)*teHubSlope2 + teHubInterX2])
+        teHubExtn2 = np.array([TE2D2[0][0]-res*res, (TE2D2[0][0]-res*res)*teHubSlope2 + teHubInterX2])
     else:
-        teHubExtn2 = np.array([TE2D2[0][1]+res*res, (TE2D2[0][1]+res*res)*teHubSlope2 + teHubInterX2])
+        teHubExtn2 = np.array([TE2D2[0][0]+res*res, (TE2D2[0][0]+res*res)*teHubSlope2 + teHubInterX2])
         
     if teCasSlope2 > 0:
-        teCasExtn2 = np.array([TE2D2[-1][1]+res*res, (TE2D2[-1][1]+res*res)*teCasSlope2 + teCasInterX2])
+        teCasExtn2 = np.array([TE2D2[-1][0]+res*res, (TE2D2[-1][0]+res*res)*teCasSlope2 + teCasInterX2])
     else:
-        teCasExtn2 = np.array([TE2D2[-1][1]-res*res, (TE2D2[-1][1]-res*res)*teCasSlope2 + teCasInterX2])
+        teCasExtn2 = np.array([TE2D2[-1][0]-res*res, (TE2D2[-1][0]-res*res)*teCasSlope2 + teCasInterX2])
 
     extnLE2D = np.vstack((leHubExtn, LE2D, leCasExtn))
     extnTE2D = np.vstack((teHubExtn, TE2D, teCasExtn))
@@ -293,7 +356,7 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
         else:
             hubIdx2 += 1
     if hubIntersect2:   
-        hubSpanFrac2 = mf.compute_span_fractions(profile22D[hubIdx2-1,:,:], extnLE2D2[hubIdx], extnTE2D2[hubIdx2])
+        hubSpanFrac2 = mf.compute_span_fractions(profile22D[hubIdx2-1,:,:], extnLE2D2[hubIdx2], extnTE2D2[hubIdx2])
         newHubBladeRegion2 = mf.rearrange_curve_by_arc_length(hubRegionPts2, hubSpanFrac2)
       
     else:
@@ -320,27 +383,37 @@ def trimProfilesToGasPath(profile1, profile2, lowerTrim, upperTrim, res):
         None
     #% Now get the profile on the hub and casing 
 
-    hubBladeProfile = np.zeros([M,3])
-    hubBladeProfile[:,0] = profile1[:,hubIdx-1,0]
-    hubBladeProfile[:,[2,1]] = newHubBladeRegion
+    #hubBladeProfile = np.zeros([M,3])
+    #hubBladeProfile[:,0] = profile1[:,hubIdx-1,0]
+    #hubBladeProfile[:,[2,1]] = newHubBladeRegion
     # hubBladeProfile = np.insert(hubBladeProfile, 0, hubBladeProfile[-1])
 
-    casBladeProfile = np.zeros([M,3])
-    casBladeProfile[:,0] = profile1[:,casIdx-2,0]
-    # casBladeProfile[:,0] = interpolate_theta_parametric(blade1Cyl[casIdx-1], blade1Cyl[casIdx-2], newCasBladeRegion[:,1], newCasBladeRegion[:,0])
-    casBladeProfile[:,[2,1]] = newCasBladeRegion
-    # casBladeProfile = np.insert(casBladeProfile, 0, casBladeProfile[-1])
+    #casBladeProfile = np.zeros([M,3])
+    #casBladeProfile[:,0] = profile1[:,casIdx-2,0]
+    ## casBladeProfile[:,0] = interpolate_theta_parametric(blade1Cyl[casIdx-1], blade1Cyl[casIdx-2], newCasBladeRegion[:,1], newCasBladeRegion[:,0])
+    #casBladeProfile[:,[2,1]] = newCasBladeRegion
+    ## casBladeProfile = np.insert(casBladeProfile, 0, casBladeProfile[-1])
 
-    hubBladeProfile2 = np.zeros([M,3])
-    hubBladeProfile2[:,0] = profile2[:,hubIdx2-1,0]
-    hubBladeProfile2[:,[2,1]] = newHubBladeRegion2
+    #hubBladeProfile2 = np.zeros([M,3])
+    #hubBladeProfile2[:,0] = profile2[:,hubIdx2-1,0]
+    #hubBladeProfile2[:,[2,1]] = newHubBladeRegion2
     
 
-    casBladeProfile2 = np.zeros([M,3])
-    casBladeProfile2[:,0] = profile2[:,casIdx2-2,0]
-    # casBladeProfile2[:,0] = interpolate_theta_parametric(blade2Cyl[casIdx2-1], blade2Cyl[casIdx2-2], newCasBladeRegion2[:,1], newCasBladeRegion2[:,0])
-    casBladeProfile2[:,[2,1]] = newCasBladeRegion2
+    #casBladeProfile2 = np.zeros([M,3])
+    #casBladeProfile2[:,0] = profile2[:,casIdx2-2,0]
+    ## casBladeProfile2[:,0] = interpolate_theta_parametric(blade2Cyl[casIdx2-1], blade2Cyl[casIdx2-2], newCasBladeRegion2[:,1], newCasBladeRegion2[:,0])
+    #casBladeProfile2[:,[2,1]] = newCasBladeRegion2
+    
     # print(casBladeProfile)
+    # Additional changes are made here, instead of always extruding the last profiles to the gas path during trimming, check if the profile
+    #extends beyond the gas path, if yes, interpolate for the theta coordinates. If no, then extrude instead of extrapolating 
+    # Blade 1
+    hubBladeProfile = reconstructBoundaryProfile(profile1, newHubBladeRegion, hubIdx, "hub")
+    casBladeProfile = reconstructBoundaryProfile(profile1, newCasBladeRegion, casIdx, "casing")
+    # Blade 2
+    hubBladeProfile2 = reconstructBoundaryProfile(profile2, newHubBladeRegion2, hubIdx2, "hub")
+    casBladeProfile2 = reconstructBoundaryProfile(profile2, newCasBladeRegion2, casIdx2, "casing")
+        
     #The blade was splitted here, I need to know why that was done, in a moment. Found it.
     #The hub and casing profiles needs to be closed.
     
