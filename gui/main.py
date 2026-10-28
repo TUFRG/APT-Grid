@@ -31,13 +31,7 @@ PARAMETER_HELP_TEXT = {
     "periodic": "",
     "scale": "",
     "nrad": "",
-    "STLoutput": (
-        "Writes an STL surface file for each passage boundary (hub, casing, "
-        "blade, inlet/outlet, etc.) to the output folder. These STL files are "
-        "required by the OpenFOAM mesh-building step (Build OpenFOAM Mesh), "
-        "so leave this enabled unless you only need the passageParameters "
-        "file and want a faster, smaller-output run."
-    ),
+    "STLoutput":"",
 
     # Boundary Layer reference inputs
     "rhoref": "",
@@ -100,7 +94,7 @@ class ParameterHelp:
         popup.configure(bg="white")
         popup.resizable(False, False)
         popup.transient(self.widget.winfo_toplevel())
-        popup.grab_set()
+        popup.grab_set() #makes the popup modal so users are forced to x the popup to return to using the main gui
 
         popup.update_idletasks()
         x = self.widget.winfo_rootx() + 20
@@ -260,7 +254,7 @@ class AppState:
 
 class BasePage(ttk.Frame):
     def __init__(self, parent, app, title: str):
-        super().__init__(parent, padding=24, style="Content.TFrame")
+        super().__init__(parent, padding=(24, 8, 24, 24), style="Content.TFrame")
         self.app = app
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
@@ -308,7 +302,7 @@ class HomePage(BasePage):
         self.bind("<Destroy>", self._on_destroy)
         self._build_page()
 
-    def _on_destroy(self, event=None):
+    def _on_destroy(self, event=None): #stops the tagline animation if the home page disappears
         if event is not None and event.widget is not self:
             return
         if self.tagline_after_id is not None:
@@ -339,13 +333,6 @@ class HomePage(BasePage):
             self.hero_icon_image = hero_icon
             icon_label = tk.Label(hero, image=self.hero_icon_image, bg=CONTENT_BG, bd=0)
             icon_label.grid(row=0, column=0, pady=(62, 2))
-        else:
-            badge = tk.Canvas(
-                hero, width=96, height=96, bg=CONTENT_BG,
-                highlightthickness=0, bd=0
-            )
-            badge.grid(row=0, column=0, pady=(62, 2))
-            self._draw_hero_badge(badge)
 
         title_frame = tk.Frame(hero, bg=CONTENT_BG, width=430, height=106)
         title_frame.grid(row=1, column=0)
@@ -408,7 +395,7 @@ class HomePage(BasePage):
         )
         footer.grid(row=3, column=0, sticky="s", pady=(8, 0))
 
-    def on_show(self):
+    def on_show(self): #resets the tagline animation from the beggining everytime home page is clicked
         if self.tagline_after_id is not None:
             self.after_cancel(self.tagline_after_id)
             self.tagline_after_id = None
@@ -417,7 +404,7 @@ class HomePage(BasePage):
         self.tagline_label.configure(text="")
         self._animate_tagline_once()
 
-    def _animate_tagline_once(self):
+    def _animate_tagline_once(self): #as index increases, the next letter is added and function repeats every 38 ms, creating the typing effect
         if not hasattr(self, "tagline_label"):
             return
 
@@ -443,17 +430,6 @@ class HomePage(BasePage):
             except tk.TclError:
                 return None
         return None
-
-    def _draw_hero_badge(self, canvas):
-        self.app._draw_rounded_rect(canvas, 2, 2, 94, 94, radius=24, fill=MAIN_BLUE)
-        offset = 22
-        step = 17
-        for i in range(3):
-            x = offset + i * step
-            canvas.create_line(x, offset - 4, x, offset + 2 * step + 4, fill="white", width=2)
-            y = offset + i * step
-            canvas.create_line(offset - 4, y, offset + 2 * step + 4, y, fill="white", width=2)
-
 
 
 class FilesPage(BasePage):
@@ -540,7 +516,7 @@ class BasicSetupPage(BasePage):
     def __init__(self, parent, app):
         super().__init__(parent, app, title="Basic Setup")
 
-        self.loading_state = False
+        self.loading_state = False #later becomes true but prevents the program from treating loaded values as if the user just changed them
 
         self.blades_var = tk.IntVar()
         self.periodic_var = tk.IntVar()
@@ -971,20 +947,6 @@ class BoundaryLayerPage(BasePage):
         self.loading_state = False
 
         self.toggle_auto_boundary_layer()
-
-
-class PlaceholderPage(BasePage):
-    def __init__(self, parent, app, title):
-        super().__init__(parent, app, title=title)
-
-        label = ttk.Label(
-            self.body,
-            text="This is a placeholder.",
-            style="Body.TLabel",
-            wraplength=820,
-            justify="left",
-        )
-        label.grid(row=0, column=0, sticky="w")
 
 
 class MeshTuningPage(BasePage):
@@ -1771,7 +1733,7 @@ class RunPage(BasePage):
 
         return True
 
-    def _build_run_config(self):
+    def _build_run_config(self): #collects every value sitting in AppState dictionary
         config = self.app.state.values.copy()
 
         output_path = config.get("outputPath", "")
@@ -1780,7 +1742,7 @@ class RunPage(BasePage):
 
         return config
 
-    def _write_run_config(self, config):
+    def _write_run_config(self, config): #uses the dictionary to create a .json file stored in the output folder
         output_path = config.get("outputPath", "")
         config_path = os.path.join(output_path, "apt_grid_run_config.json")
 
@@ -1834,16 +1796,16 @@ class RunPage(BasePage):
         if not passages:
             messagebox.showerror(
                 "No Generated Passages Found",
-                "Could not find any generated passage folders.\n\n"
-                "Run Generate Surfaces first and make sure the output folder contains passage0."
+                "No passage folders found.\n\n"
+                "Click Generate Surfaces first."
             )
             return
 
         if "passage0" not in passages:
             messagebox.showerror(
                 "Missing passage0",
-                "The output folder contains passage folders, but passage0 was not found.\n\n"
-                "The OpenFOAM workflow expects passage0 to exist."
+                "passage0 is missing from the output folder.\n\n"
+                "OpenFOAM needs it to build the mesh."
             )
             return
 
@@ -1858,23 +1820,22 @@ class RunPage(BasePage):
             if bash_script is None:
                 messagebox.showerror(
                     "Multipassage Script Not Found",
-                    "Multiple passage folders were found, but passageMeshes/multipassagetest.sh was not found."
+                    "Could not find passageMeshes/multipassagetest.sh."
                 )
                 return
 
             if len(passages) > 2:
                 messagebox.showwarning(
                     "Only Two-Passage Script Available",
-                    "More than two generated passage folders were found.\n\n"
-                    "The current multipassagetest.sh script is hard-coded for passage0 and passage1, "
-                    "so only those two will be processed by this button."
+                    "This feature only supports 2 passages\n\n"
+                    "Found more than 2 — only passage0 and passage1 will be used"
                 )
 
         if command is None:
             messagebox.showerror(
                 "Bash Not Available",
-                "Could not find WSL or bash on this computer.\n\n"
-                "On Windows, this step should usually be run through WSL with OpenFOAM installed."
+                "WSL or bash was not found\n\n"
+                "Install WSL with OpenFOAM to use this"
             )
             return
 
@@ -1882,7 +1843,7 @@ class RunPage(BasePage):
         self._print_bash_summary(workflow_name, passages, working_folder, command, bash_script)
         self.append_console("[OpenFOAM Mesh Build Started]\n")
 
-        thread = threading.Thread(
+        thread = threading.Thread(     #creating thread so openfoam can run in background
             target=self._run_bash_thread,
             args=(command, working_folder),
             daemon=True
@@ -1979,7 +1940,7 @@ class RunPage(BasePage):
 
             self.output_queue.put(f"[Command] {' '.join(command)}\n\n")
 
-            self.process = subprocess.Popen(
+            self.process = subprocess.Popen(    #backend script is launched
                 command,
                 cwd=backend_folder,
                 stdout=subprocess.PIPE,
@@ -2006,7 +1967,7 @@ class RunPage(BasePage):
             self.process = None
             self.after(0, lambda: self.set_running_state(False))
 
-    def _process_output_queue(self):
+    def _process_output_queue(self):   #loads all output text from openfoam thread into output_queue and displays in console
         try:
             while True:
                 text = self.output_queue.get_nowait()
@@ -2101,7 +2062,7 @@ class AptGridApp(tk.Tk):
         self.content.rowconfigure(1, weight=1)
 
         self.topbar = ttk.Frame(self.content, style="Topbar.TFrame")
-        self.topbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        self.topbar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
 
         self.page_container = ttk.Frame(self.content, style="Content.TFrame")
         self.page_container.grid(row=1, column=0, sticky="nsew")
@@ -2112,13 +2073,17 @@ class AptGridApp(tk.Tk):
         path = os.path.join(os.path.dirname(__file__), ICONS_FOLDER, filename)
         if os.path.exists(path):
             try:
-                # Load sidebar icons at their saved PNG size.
-                # For crisp icons, export each PNG around 40x40 or 40x50 px
-                # and do not resize/subsample it in Tkinter.
                 return tk.PhotoImage(file=path)
             except tk.TclError:
                 return None
         return None
+
+    def _load_cropped_logo(self, path, crop_box, subsample_factor):
+        source = tk.PhotoImage(file=path)
+        x1, y1, x2, y2 = crop_box
+        cropped = tk.PhotoImage(width=x2 - x1, height=y2 - y1)
+        cropped.tk.call(cropped, "copy", source, "-from", x1, y1, x2, y2, "-to", 0, 0)
+        return cropped.subsample(subsample_factor, subsample_factor)
 
     def _build_floating_logos(self):
         first_logo_path = os.path.join(
@@ -2135,8 +2100,9 @@ class AptGridApp(tk.Tk):
 
         if os.path.exists(second_logo_path):
             try:
-                self.floating_logo_2 = tk.PhotoImage(file=second_logo_path)
-                self.floating_logo_2 = self.floating_logo_2.subsample(3, 3)
+                self.floating_logo_2 = self._load_cropped_logo(
+                    second_logo_path, (58, 56, 564, 245), 3
+                )
 
                 logo_2_label = tk.Label(
                     self.topbar,
@@ -2156,8 +2122,9 @@ class AptGridApp(tk.Tk):
 
         if os.path.exists(first_logo_path):
             try:
-                self.floating_logo_1 = tk.PhotoImage(file=first_logo_path)
-                self.floating_logo_1 = self.floating_logo_1.subsample(6, 6)
+                self.floating_logo_1 = self._load_cropped_logo(
+                    first_logo_path, (22, 14, 632, 375), 6
+                )
 
                 logo_1_label = tk.Label(
                     self.topbar,
@@ -2279,7 +2246,7 @@ class AptGridApp(tk.Tk):
                 "grid-generation workflow by providing a guided environment for "
                 "selecting geometry files, configuring mesh parameters, and "
                 "launching the backend generation process.\n\n"
-                "Developed for the TUFRG research team at the University of Windsor.\n\n"
+                "Developed by the TUFRG research team at the University of Windsor.\n\n"
                 "For any inquiries, please contact:\n"
                 "jdefoe@uwindsor.ca"
             )

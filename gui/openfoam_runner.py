@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 
+#openfoam_runner is a helper between the Windows GUI and openfoam in WSL
 
 class OpenFoamRunner:
     def __init__(self, project_folder):
@@ -38,7 +39,7 @@ class OpenFoamRunner:
 
         return self.project_folder
 
-    def windows_to_wsl_path(self, windows_path):
+    def windows_to_wsl_path(self, windows_path): #converts windows path (C:\) into WSL path (/mnt/c/)
         try:
             completed = subprocess.run(
                 ["wsl", "wslpath", "-a", windows_path],
@@ -64,7 +65,7 @@ class OpenFoamRunner:
         except ValueError:
             return 0
 
-    def find_generated_passages(self, output_folder):
+    def find_generated_passages(self, output_folder): #finds all passages and sorts them
         if not os.path.isdir(output_folder):
             return []
 
@@ -77,11 +78,11 @@ class OpenFoamRunner:
         return sorted(passages, key=self.passage_sort_key)
 
     @staticmethod
-    def shell_quote(value):
+    def shell_quote(value): #handles spaces in paths
         return "'" + str(value).replace("'", "'\\''") + "'"
 
     @staticmethod
-    def posix_join(*parts):
+    def posix_join(*parts): #uses / insteaf of \ for linux compatability
         cleaned_parts = []
 
         for index, part in enumerate(parts):
@@ -95,9 +96,10 @@ class OpenFoamRunner:
         return "/".join(cleaned_parts)
 
     @staticmethod
-    def openfoam_source_command():
+    def openfoam_source_command(): #bash command to load openfoam
         return (
-            "if [ -f /opt/openfoam12/etc/bashrc ]; then . /opt/openfoam12/etc/bashrc; "
+            "if [ -f /usr/lib/openfoam/openfoam2412/etc/bashrc ]; then . /usr/lib/openfoam/openfoam2412/etc/bashrc; "
+            "elif [ -f /opt/openfoam12/etc/bashrc ]; then . /opt/openfoam12/etc/bashrc; "
             "elif [ -f /usr/lib/openfoam/openfoam12/etc/bashrc ]; then . /usr/lib/openfoam/openfoam12/etc/bashrc; "
             "else true; fi"
         )
@@ -125,14 +127,12 @@ class OpenFoamRunner:
         ])
 
     def wsl_single_passage_shell_command(self, source_passage_meshes_folder, source_output_folder, passage_name="passage0"):
+        #these are the bash commands for staging, meshing, checking, and saving one passage
         source_passage_meshes_folder = source_passage_meshes_folder.replace("\\", "/")
         source_output_folder = source_output_folder.replace("\\", "/")
         safe_passage_name = str(passage_name).replace("'", "")
 
         return rf"""
-# This script is written to a real .sh file and then executed by WSL.
-# That avoids bash -c quoting/variable-expansion problems from Windows.
-# Use an APT-Grid-specific variable name to avoid any OpenFOAM/internal conflicts.
 if ! command -v blockMesh >/dev/null 2>&1; then
     if [ -f "$HOME/.bashrc" ]; then
         . "$HOME/.bashrc" || true
@@ -140,7 +140,9 @@ if ! command -v blockMesh >/dev/null 2>&1; then
 fi
 
 if ! command -v blockMesh >/dev/null 2>&1; then
-    if [ -f /opt/openfoam12/etc/bashrc ]; then
+    if [ -f /usr/lib/openfoam/openfoam2412/etc/bashrc ]; then
+        . /usr/lib/openfoam/openfoam2412/etc/bashrc || true
+    elif [ -f /opt/openfoam12/etc/bashrc ]; then
         . /opt/openfoam12/etc/bashrc || true
     elif [ -f /usr/lib/openfoam/openfoam12/etc/bashrc ]; then
         . /usr/lib/openfoam/openfoam12/etc/bashrc || true
@@ -268,7 +270,9 @@ if ! command -v blockMesh >/dev/null 2>&1; then
 fi
 
 if ! command -v blockMesh >/dev/null 2>&1; then
-    if [ -f /opt/openfoam12/etc/bashrc ]; then
+    if [ -f /usr/lib/openfoam/openfoam2412/etc/bashrc ]; then
+        . /usr/lib/openfoam/openfoam2412/etc/bashrc || true
+    elif [ -f /opt/openfoam12/etc/bashrc ]; then
         . /opt/openfoam12/etc/bashrc || true
     elif [ -f /usr/lib/openfoam/openfoam12/etc/bashrc ]; then
         . /usr/lib/openfoam/openfoam12/etc/bashrc || true
@@ -350,7 +354,7 @@ exit 0
 """.strip()
 
     def write_shell_script(self, shell_command, script_filename, output_folder):
-        """Write a temporary shell script to output_folder and return its local path."""
+        """Write a temporary shell script to output_folder and return its local path"""
         os.makedirs(output_folder, exist_ok=True)
         script_path = os.path.join(output_folder, script_filename)
 
@@ -367,11 +371,11 @@ exit 0
         return script_path
 
     def write_wsl_shell_script(self, shell_command, script_filename, output_folder):
-        """Write a temporary WSL shell script to output_folder and return its WSL path."""
+        """Write a temporary WSL shell script to output_folder and return its WSL path"""
         script_path = self.write_shell_script(shell_command, script_filename, output_folder)
         return self.windows_to_wsl_path(script_path)
 
-    def build_multipassage_command(self, output_folder):
+    def build_multipassage_command(self, output_folder): #builds the final command used to launch the multipssafe workflow on windsows/wsl/linux
         working_folder = self.get_passage_meshes_folder()
         bash_script = self.find_multipassage_script()
 
@@ -437,7 +441,7 @@ exit 0
 
         return ["bash", bash_script]
 
-    def build_single_passage_command(self, output_folder, passage_name="passage0"):
+    def build_single_passage_command(self, output_folder, passage_name="passage0"): #final command to launch single passage workflow
         working_folder = self.get_passage_meshes_folder()
 
         if os.name == "nt":

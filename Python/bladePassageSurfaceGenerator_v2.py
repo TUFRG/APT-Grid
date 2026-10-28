@@ -2744,7 +2744,7 @@ def densifyCurve(points, n_points_new, distribution='both'):
     if distribution == 'both':
         # Cosine clustering at both ends (like airfoil distribution)
         theta = np.linspace(0, np.pi, n_points_new)
-        # Map from [0, Ãâ‚¬] to [0, 1], then to [0, total_length]
+        # Map from [0, π] to [0, 1], then to [0, total_length]
         xi = (1 - np.cos(theta)) / 2  # Maps to [0, 1]
         new_params = xi * total_length
     elif distribution == 'TE':
@@ -3118,7 +3118,7 @@ def offsetCurve(x, y, d, smooth=True, s=0, periodic=True):
     # Normalize tangent vector
     tx = dx_du / tangent_mag
     ty = dy_du / tangent_mag
-    # Normal vector (perpendicular to tangent, rotated 90Ã‚Â° CCW)
+    # Normal vector (perpendicular to tangent, rotated 90° CCW)
     nx = -ty
     ny = tx
     # Offset points along normal
@@ -3979,7 +3979,7 @@ def load_gui_config():
 
 def get_curve_file_dimensions(curve_file_path):
     """
-    Replaces grep/wc/sed with pure Python so the backend works on Windows.
+    Replaces grep/wc/sed with pure Python so the backend works on Windows
 
     Returns:
         nSections, ptsPerSection
@@ -3999,7 +3999,7 @@ def get_curve_file_dimensions(curve_file_path):
             if not stripped:
                 continue
 
-            if "Profile" in stripped:
+            if "Profile" in stripped: #a new line containing "profile" is treated as a new section
                 if inside_profile:
                     point_counts.append(current_points)
 
@@ -4008,7 +4008,7 @@ def get_curve_file_dimensions(curve_file_path):
                 inside_profile = True
 
             else:
-                if inside_profile and not stripped.startswith("#"):
+                if inside_profile and not stripped.startswith("#"): #otherwise if inside a profile and the line isnt a comment, count as a coord pnt
                     current_points += 1
 
     if inside_profile:
