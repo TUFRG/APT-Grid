@@ -3989,7 +3989,7 @@ def main() -> int:
     #bladeCurveFile = 'statorBladeFromAdekola.curve'
     outputPath = '../outputData/'
     Nb = 20  # number of blades in row
-    periodic = 1  # mode selection
+    periodic = 0  # mode selection
     
     # Grid generation tuning parameters
     percentVal = 0.04  # fraction of arclength of blades where we cut off to avoid odd cell sizes in blade-to-offset BL blocks
