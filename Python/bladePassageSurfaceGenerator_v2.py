@@ -2378,20 +2378,6 @@ def quadratic_bezier_curve(p0, p1, p2, num_points=100):
     return curve_points.T
 
 
-def alignPassageAngles(blade1Cyl, blade2Cyl, pitch):
-    """
-    Align the angular branch of blade 2 with blade 1.
-    Inputs are cylindrical: (theta, r, z).
-    Preserves the physical blade geometry.
-    """
-    theta1 = np.mean(blade1Cyl[..., 0])
-    theta2 = np.mean(blade2Cyl[..., 0])
-    # Choose the 2*pi branch nearest the expected positive pitch
-    n = np.round((theta1 + pitch - theta2) / (2*np.pi))
-    blade2Cyl[..., 0] += n * 2*np.pi
-    return blade1Cyl, blade2Cyl
-
-    
 def centrePassage(dataset1, dataset2):
     """
     Takes in 2 datasets in cylindrical coordinates, where the 1st element
@@ -2423,7 +2409,12 @@ def centrePassage(dataset1, dataset2):
         # since this is dataset2, move low theta points
         # over to the high theta ones
         dataset2shifted[dataset2[..., 0] <  0, 0] += 2*np.pi
-    # Now we guarantee neither dataset is split and that dataset1 lies at
+    # Now we guarantee neither dataset is split
+    if (maxTheta1>minTheta2):
+        # if this condition is true, it means the blades are "swapped"
+        # need to take blade2 data and add 2*pi to it to fix this
+        dataset2shifted[:, :, 0] += 2*np.pi
+    # ... and that dataset1 lies at
     # lower theta coordinates than dataset2
 
     # Now find middle of passage and ensure shifted properly
@@ -2432,7 +2423,7 @@ def centrePassage(dataset1, dataset2):
     thetaShift = 0.5*(minNewTheta1 + maxNewTheta2)
     dataset1shifted[..., 0] -= thetaShift
     dataset2shifted[..., 0] -= thetaShift
-    
+
     return dataset1shifted, dataset2shifted, thetaShift
 
 
@@ -3981,14 +3972,11 @@ def main() -> int:
     """ INPUTS: """
     # By Jeff Defoe -- more general input code
     dataPath = '../inputData/'
-    hubFileName = 'reshapeHub.curve'
-    casFileName = 'reshapeCas.curve'
+    hubFileName = 'sHub.curve'
+    casFileName = 'sCas.curve'
     bladeCurveFile = 'sBlade.curve'
-    #hubFileName = 'sHub.curve'
-    #casFileName = 'sCas.curve'
-    #bladeCurveFile = 'statorBladeFromAdekola.curve'
     outputPath = '../outputData/'
-    Nb = 20  # number of blades in row
+    Nb = 31  # number of blades in row
     periodic = 0  # mode selection
     
     # Grid generation tuning parameters
@@ -4010,7 +3998,7 @@ def main() -> int:
     Uref = 100.0  # base SI units (m/s)
     LrefHub = 388.0  # input length units (cannot be calculated because it depends on components outside domain)
     LrefCas = 388.0  # input length units (cannot be calculated because it depends on components outside domain)
-    LrefBla = 35.0  # input length units (JD: this should be calculated = mean chord)
+    LrefBla = 75.0  # input length units (JD: this should be calculated = mean chord)
     muref = 1.8e-5  # base SI units (kg/(m*s))
     yPlusHub = 2  # 100
     yPlusCas = 2  # 100
@@ -4139,11 +4127,11 @@ def main() -> int:
         # Convert data from Cartesian to cylindrical
         blade1Cyl = CartToCyl(blade1)
         blade2Cyl = CartToCyl(blade2)
-        pitch = 2*np.pi/Nb
-        blade1Cyl, blade2Cyl = alignPassageAngles(blade1Cyl, blade2Cyl, pitch)
         # Ensure that the two set of blades are locally in (-pi, pi)
         blade1Cyl, blade2Cyl, thetaShift = centrePassage(blade1Cyl, blade2Cyl)
         print(f'thetaShift = {thetaShift}')
+        plt.plot(blade1Cyl[:, 10, 2]+thetaShift, blade1Cyl[:, 10, 0]+thetaShift, '-b')
+        plt.plot(blade2Cyl[:, 10, 2]+thetaShift, blade2Cyl[:, 10, 0]+thetaShift, '.r')
 
         # Check that first and last blade profiles lie on or extend beyond hub/casing, adjust as needed
         blade1Cyl, blade2Cyl, nSections = trimProfilesToGasPath(blade1Cyl, blade2Cyl, hub, cas, res)
@@ -4191,8 +4179,6 @@ def main() -> int:
                                                     res)
 
         # Get initial estimates of directions for upstream/downstream extensions for each section
-        #angleLE1, angleTE1 = getInitExtAngles(blade1LECyl, blade1TECyl, blade1pCyl, blade1nCyl)
-        #angleLE2, angleTE2 = getInitExtAngles(blade2LECyl, blade2TECyl, blade2pCyl, blade2nCyl)
         angleLE1, angleTE1 = getInitExtAngles(LE1mpt, TE1mpt, blade1pmpt, blade1nmpt)
         angleLE2, angleTE2 = getInitExtAngles(LE2mpt, TE2mpt, blade2pmpt, blade2nmpt)
 
@@ -4216,9 +4202,6 @@ def main() -> int:
         crossPassageDnCyl = mptToCyl(crossPassageDnmpt,
                                      upstreamMprime, blade1PMprime,
                                      downstreamMprime, hub, cas)
-        #blade1UpExtCyl = mptToCyl2(blade1UpExtmpt,
-        #                             upstreamMprime, blade1PMprime,
-        #                             downstreamMprime, meridCurve)#hub, cas)
         blade1DnExtCyl = mptToCyl(blade1DnExtmpt,
                                      upstreamMprime, blade1PMprime,
                                      downstreamMprime, hub, cas)
