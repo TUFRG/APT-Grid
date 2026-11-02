@@ -2417,6 +2417,12 @@ def centrePassage(dataset1, dataset2):
     # ... and that dataset1 lies at
     # lower theta coordinates than dataset2
 
+    # However one more check is needed, as it is now possible that
+    # blade 1 also needs to be shifted.
+    minTheta2new = dataset2shifted[..., 0].min()
+    if (minTheta2new - maxTheta1)>np.pi:
+        dataset1shifted[:, :, 0] += 2*np.pi
+
     # Now find middle of passage and ensure shifted properly
     minNewTheta1 = dataset1shifted[..., 0].min()
     maxNewTheta2 = dataset2shifted[..., 0].max()
@@ -3972,12 +3978,12 @@ def main() -> int:
     """ INPUTS: """
     # By Jeff Defoe -- more general input code
     dataPath = '../inputData/'
-    hubFileName = 'sHub.curve'
-    casFileName = 'sCas.curve'
+    hubFileName = 'reshapeHub.curve'
+    casFileName = 'reshapeCas.curve'
     bladeCurveFile = 'sBlade.curve'
     outputPath = '../outputData/'
-    Nb = 31  # number of blades in row
-    periodic = 0  # mode selection
+    Nb = 20  # number of blades in row
+    periodic = 1  # mode selection
     
     # Grid generation tuning parameters
     percentVal = 0.04  # fraction of arclength of blades where we cut off to avoid odd cell sizes in blade-to-offset BL blocks
@@ -3992,13 +3998,13 @@ def main() -> int:
         # For example, if input data in mm, scale = 0.001
 
     # Grid generation inputs
-    nrad = 54   # Number of radial points outside endwall BLs
+    nrad = 45   # Number of radial points outside endwall BLs
     # optional BL definition parameters
     rhoref = 1.2  # base SI units (kg/m**3)
     Uref = 100.0  # base SI units (m/s)
     LrefHub = 388.0  # input length units (cannot be calculated because it depends on components outside domain)
     LrefCas = 388.0  # input length units (cannot be calculated because it depends on components outside domain)
-    LrefBla = 75.0  # input length units (JD: this should be calculated = mean chord)
+    LrefBla = 35.0  # input length units (JD: this should be calculated = mean chord)
     muref = 1.8e-5  # base SI units (kg/(m*s))
     yPlusHub = 2  # 100
     yPlusCas = 2  # 100
@@ -4017,7 +4023,7 @@ def main() -> int:
     # Tangential grading parameters
         # value = ratio of cell size at midpassage to cell size adjacent blade BLs
     gTan = 2  #2  # note: 4 gives a reasonable-looking grid
-    additionalTangentialRefine = 3.5 # 1 = no extra refinement. This is a factor on the midpassage cell size.
+    additionalTangentialRefine = 2.8 # 1 = no extra refinement. This is a factor on the midpassage cell size.
     # Axial clustering parameters
     # Leading/trailing edge clustering parameters
     dax1primeLE = 0.002  # This is for about half the blade, so 0.01 means 0.5% chord
@@ -4031,7 +4037,7 @@ def main() -> int:
     """ END INPUTS """
     
     # STL definition inputs, typically do not need to be modified:
-    STLoutput = 1  # determine whether STLs are written or not, primarily useful for debugging
+    STLoutput = 0  # determine whether STLs are written or not, primarily useful for debugging
     res = 30  # upstream and downstream extention resolution 
     passageRes = 360  # Resolution of points for a single passage 
     bladeRes = 400  # Increase resolution of underlying blade data 
@@ -4130,8 +4136,6 @@ def main() -> int:
         # Ensure that the two set of blades are locally in (-pi, pi)
         blade1Cyl, blade2Cyl, thetaShift = centrePassage(blade1Cyl, blade2Cyl)
         print(f'thetaShift = {thetaShift}')
-        plt.plot(blade1Cyl[:, 10, 2]+thetaShift, blade1Cyl[:, 10, 0]+thetaShift, '-b')
-        plt.plot(blade2Cyl[:, 10, 2]+thetaShift, blade2Cyl[:, 10, 0]+thetaShift, '.r')
 
         # Check that first and last blade profiles lie on or extend beyond hub/casing, adjust as needed
         blade1Cyl, blade2Cyl, nSections = trimProfilesToGasPath(blade1Cyl, blade2Cyl, hub, cas, res)
