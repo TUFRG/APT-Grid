@@ -27,22 +27,22 @@ MAIN_BLUE = "#005298"
 
 PARAMETER_HELP_TEXT = {
     # Basic Setup
-    "Nb": "",
-    "periodic": "",
-    "scale": "",
-    "nrad": "",
-    "STLoutput":"",
+    "Nb": "Blades in the full annulus of the blade row",
+    "periodic": "Enabled = generate a single passage mesh; disabled = generate a full annulus of blade passage meshes",
+    "scale": "Factor on scale of data to convert to metres. For example, if input data is in mm, value should be 0.001.",
+    "nrad": "Number of cells in the radial direction between the hub and casing boundary layer blocks",
+    "STLoutput": "Whether or not to write STL outputs. Disable if re-generating a mesh with the same geometry and BL size but different refinement parameters.",
 
     # Boundary Layer reference inputs
-    "rhoref": "",
-    "Uref": "",
-    "LrefHub": "",
-    "LrefCas": "",
-    "LrefBla": "",
-    "muref": "",
-    "yPlusHub": "",
-    "yPlusCas": "",
-    "yPlusBla": "",
+    "rhoref": "Density value used for first cell size computation.",
+    "Uref": "Velocity scale used for boundary layer sizing.",
+    "LrefHub": "Length scale used for hub boundary layer sizing. May be longer than hub curve due to incoming BLs.",
+    "LrefCas": "Length scale used for casing boundary layer sizing. May be longer than casing curve due to incoming BLs.",
+    "LrefBla": "Length scale used for blade boundary layer sizing. Should be roughly equal to mean blade chord.",
+    "muref": "Viscosity used for boundary layer sizing.",
+    "yPlusHub": "Typical y+ value along hub",
+    "yPlusCas": "Typical y+ value along casing",
+    "yPlusBla": "Typical y+ value along blades",
 
     # Boundary Layer manual results
     "delHub": "",
@@ -53,23 +53,23 @@ PARAMETER_HELP_TEXT = {
     "dy1Bla": "",
 
     # Mesh Tuning
-    "gRad": "",
-    "gTan": "",
-    "additionalTangentialRefine": "",
-    "additionalAxialRefine": "",
-    "dax1primeLE": "",
-    "rLE": "",
-    "dax1primeTE": "",
-    "rTE": "",
-    "rUpFar": "",
-    "rDnFar": "",
+    "gRad": "Factor by which cells at mid-span are larger than cells adjacent to hub and casing BL blocks.",
+    "gTan": "Factor by which cells at mid-passage are larger than cells adjacent to blade BL blocks.",
+    "additionalTangentialRefine": "Factor by which all cell sizes should be reduced in the tangential direction.",
+    "additionalAxialRefine": "Factor by which all cell sizes should be reduced in the axial direction.",
+    "dax1primeLE": "Fraction of semi-chord in which additional refinement used at the leading edge.",
+    "rLE": "Factor by which cell sizes grow moving from the leading edge towards mid-chord.",
+    "dax1primeTE": "Fraction of semi-chord in which additional refinement used at the trailing edge.",
+    "rTE": "Factor by which cell sizes grow moving from the trailing edge towards mid-chord.",
+    "rUpFar": "Axial expansion rate of cells more than 1/4 axial chord upstream of leading edge.",
+    "rDnFar": "Axial expansion rate of cells more than 1/4 axial chord downstream of trailing edge.",
 
     # Advanced
-    "percentVal": "",
-    "percentValNonCutLE": "",
-    "percentValNonCutTE": "",
-    "angConstraintCurves": "",
-    "angConstraintOffsets": "",
+    "percentVal": "Fraction of blade arclength in which arclength mapping of grid points between blade and blade-BL edge surfaces is ignored.",
+    "percentValNonCutLE": "Arclength fraction at leading edge where detailed shape ignored in arclength mapping.",
+    "percentValNonCutTE": "Arclength fraction at trailing edge where detailed shape ignored in arclength mapping.",
+    "angConstraintCurves": "Minimum angle between ends of Bezier curves dividing between-blades and up-/down-stream blocks and tangential direction.",
+    "angConstraintOffsets": "Minimum angle between ends of Bezier curves defining LE and TE regions of blade BL block exteriors and axial direction.",
 }
 
 
@@ -99,7 +99,7 @@ class ParameterHelp:
         popup.update_idletasks()
         x = self.widget.winfo_rootx() + 20
         y = self.widget.winfo_rooty() + 20
-        popup.geometry(f"420x190+{x}+{y}")
+        popup.geometry(f"420x260+{x}+{y}")
 
         header = tk.Label(
             popup,
@@ -664,13 +664,13 @@ class BoundaryLayerPage(BasePage):
         reference_fields = [
             ("Reference density (kg/m³)", "rhoref"),
             ("Reference velocity (m/s)", "Uref"),
-            ("Hub reference length (m)", "LrefHub"),
-            ("Casing reference length (m)", "LrefCas"),
-            ("Blade reference length (m)", "LrefBla"),
+            ("Hub reference length (input units)", "LrefHub"),
+            ("Casing reference length (input units)", "LrefCas"),
+            ("Blade reference length (input units)", "LrefBla"),
             ("Reference viscosity (kg/m*s)", "muref"),
-            ("Hub y+ target", "yPlusHub"),
-            ("Casing y+ target", "yPlusCas"),
-            ("Blade y+ target", "yPlusBla"),
+            ("Hub y⁺ target", "yPlusHub"),
+            ("Casing y⁺ target", "yPlusCas"),
+            ("Blade y⁺ target", "yPlusBla"),
         ]
 
         for index, (label_text, key) in enumerate(reference_fields):

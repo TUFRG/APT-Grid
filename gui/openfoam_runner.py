@@ -82,7 +82,7 @@ class OpenFoamRunner:
         return "'" + str(value).replace("'", "'\\''") + "'"
 
     @staticmethod
-    def posix_join(*parts): #uses / insteaf of \ for linux compatability
+    def posix_join(*parts): #uses / instead of \ for linux compatability
         cleaned_parts = []
 
         for index, part in enumerate(parts):
