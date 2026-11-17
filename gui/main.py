@@ -70,6 +70,9 @@ PARAMETER_HELP_TEXT = {
     "percentValNonCutTE": "Arclength fraction at trailing edge where detailed shape ignored in arclength mapping.",
     "angConstraintCurves": "Minimum angle between ends of Bezier curves dividing between-blades and up-/down-stream blocks and tangential direction.",
     "angConstraintOffsets": "Minimum angle between ends of Bezier curves defining LE and TE regions of blade BL block exteriors and axial direction.",
+    "pointMergeTol": "How close two points from adjacent passages need to be (relative to local edge length) to be merged into one, when stitching the full annulus together.",
+    "edgeMergeTol": "How close two edges from adjacent passages need to be to be merged into one, when stitching the full annulus together.",
+    "integralAdjTol": "How far a matched point can be adjusted when snapping adjacent passage meshes together during stitching.",
 }
 
 
@@ -200,6 +203,9 @@ class AppState:
             "percentValNonCutTE": 0.00,
             "angConstraintCurves": 10,
             "angConstraintOffsets": 1,
+            "pointMergeTol": 0.7,
+            "edgeMergeTol": 0.00006,
+            "integralAdjTol": 0.9,
         }
 
         self.values = self.defaults.copy()
@@ -249,6 +255,9 @@ class AppState:
             "percentValNonCutTE",
             "angConstraintCurves",
             "angConstraintOffsets",
+            "pointMergeTol",
+            "edgeMergeTol",
+            "integralAdjTol",
         ])
 
 
@@ -522,12 +531,11 @@ class BasicSetupPage(BasePage):
         self.periodic_var = tk.IntVar()
         self.scale_var = tk.DoubleVar()
         self.nrad_var = tk.IntVar()
-        self.stl_output_var = tk.IntVar()
 
         self._build_page()
         self.load_state()
 
-        for var in [self.blades_var, self.periodic_var, self.scale_var, self.nrad_var, self.stl_output_var]:
+        for var in [self.blades_var, self.periodic_var, self.scale_var, self.nrad_var]:
             var.trace_add("write", self.update_state)
 
     def _build_page(self):
@@ -580,18 +588,6 @@ class BasicSetupPage(BasePage):
             takefocus=False
         ).grid(row=4, column=1, sticky="w", pady=12)
 
-        stl_output_label = self._create_parameter_label(content, "Write STL files", "STLoutput")
-        stl_output_label.grid(row=5, column=0, sticky="w", padx=(0, 24), pady=12)
-
-        ttk.Checkbutton(
-            content,
-            text="Enabled",
-            variable=self.stl_output_var,
-            onvalue=1,
-            offvalue=0,
-            takefocus=False
-        ).grid(row=5, column=1, sticky="w", pady=12)
-
         action_bar = ttk.Frame(self.body, style="Content.TFrame")
         action_bar.grid(row=1, column=0, sticky="se", pady=(28, 0))
 
@@ -611,7 +607,6 @@ class BasicSetupPage(BasePage):
             self.app.state.set("periodic", int(self.periodic_var.get()))
             self.app.state.set("scale", self.scale_var.get())
             self.app.state.set("nrad", self.nrad_var.get())
-            self.app.state.set("STLoutput", int(self.stl_output_var.get()))
         except tk.TclError:
             pass
 
@@ -626,7 +621,6 @@ class BasicSetupPage(BasePage):
         self.periodic_var.set(int(self.app.state.get("periodic", 0)))
         self.scale_var.set(self.app.state.get("scale"))
         self.nrad_var.set(self.app.state.get("nrad"))
-        self.stl_output_var.set(int(self.app.state.get("STLoutput", 1)))
 
         self.loading_state = False
 
@@ -1331,7 +1325,50 @@ class AdvancedPage(BasePage):
                 step=step,
             )
 
-      
+        tolerance_start_row = 9
+
+        ttk.Separator(content, orient="horizontal").grid(
+            row=tolerance_start_row,
+            column=0,
+            columnspan=4,
+            sticky="ew",
+            pady=(24, 18)
+        )
+
+        ttk.Label(
+            content,
+            text="Full-Annulus Stitching Tolerances",
+            style="Section.TLabel"
+        ).grid(
+            row=tolerance_start_row + 1,
+            column=0,
+            columnspan=4,
+            sticky="w",
+            pady=(0, 18)
+        )
+
+        tolerance_fields = [
+            ("Point merge tolerance", "pointMergeTol", 0.0, 10.0, 0.01),
+            ("Edge merge tolerance", "edgeMergeTol", 0.0, 10.0, 0.00001),
+            ("Integral match adjustment tolerance", "integralAdjTol", 0.0, 10.0, 0.01),
+        ]
+
+        for index, (label_text, key, min_val, max_val, step) in enumerate(tolerance_fields):
+            row = tolerance_start_row + 2 + index
+
+            self._add_spinbox_field(
+                parent=content,
+                row=row,
+                label_col=0,
+                entry_col=1,
+                label_text=label_text,
+                key=key,
+                min_val=min_val,
+                max_val=max_val,
+                step=step,
+            )
+
+
         action_bar = ttk.Frame(self.body, style="Content.TFrame")
         action_bar.grid(
             row=1,
@@ -1433,7 +1470,12 @@ class RunPage(BasePage):
         project_folder = os.path.abspath(os.path.join(gui_folder, os.pardir))
         self.runner = OpenFoamRunner(project_folder)
 
+        self.stl_output_var = tk.IntVar()
+
         self.build_page()
+        self.load_state()
+        self.stl_output_var.trace_add("write", self.update_stl_output)
+
         self.append_console("[Ready] Configure inputs, then run mesh generation.\n")
 
     def build_page(self):
@@ -1467,6 +1509,32 @@ class RunPage(BasePage):
             bg="white"
         )
         run_description.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
+
+        stl_output_frame = tk.Frame(run_card, bg="white")
+        stl_output_frame.grid(row=2, column=0, sticky="w", padx=24, pady=(0, 18))
+
+        ttk.Checkbutton(
+            stl_output_frame,
+            text="Write STL files",
+            variable=self.stl_output_var,
+            onvalue=1,
+            offvalue=0,
+            takefocus=False
+        ).grid(row=0, column=0, sticky="w")
+
+        stl_output_help_icon = tk.Canvas(
+            stl_output_frame,
+            width=14,
+            height=14,
+            bg="white",
+            highlightthickness=0,
+            bd=0,
+            cursor="hand2"
+        )
+        stl_output_help_icon.create_oval(1, 1, 13, 13, fill="white", outline="#9bb7d4", width=1)
+        stl_output_help_icon.create_text(7, 7, text="?", fill="#5f7ea8", font=("Segoe UI", 7, "bold"))
+        stl_output_help_icon.grid(row=0, column=1, sticky="w", padx=(5, 0))
+        ParameterHelp(stl_output_help_icon, "Write STL files", PARAMETER_HELP_TEXT.get("STLoutput", ""))
 
         button_frame = tk.Frame(run_card, bg="white")
         button_frame.grid(row=0, column=1, rowspan=2, sticky="e", padx=24, pady=18)
@@ -1596,6 +1664,15 @@ class RunPage(BasePage):
             cursor="hand2"
         )
         save_button.grid(row=0, column=1)
+
+    def load_state(self):
+        self.stl_output_var.set(int(self.app.state.get("STLoutput", 1)))
+
+    def update_stl_output(self, *args):
+        try:
+            self.app.state.set("STLoutput", int(self.stl_output_var.get()))
+        except tk.TclError:
+            pass
 
     def append_console(self, text):
         self.console.insert("end", text)
@@ -1813,7 +1890,7 @@ class RunPage(BasePage):
             workflow_name = "Single passage OpenFOAM build"
             bash_script = None
             command, working_folder = self.runner.build_single_passage_command(output_folder, "passage0")
-        else:
+        elif len(passages) == 2:
             workflow_name = "Two-passage OpenFOAM build"
             command, working_folder, bash_script = self.runner.build_multipassage_command(output_folder)
 
@@ -1823,13 +1900,21 @@ class RunPage(BasePage):
                     "Could not find passageMeshes/multipassagetest.sh."
                 )
                 return
+        else:
+            workflow_name = "Full-annulus OpenFOAM build"
+            tolerance_values = {
+                "pointMergeTol": self.app.state.get("pointMergeTol", 0.7),
+                "edgeMergeTol": self.app.state.get("edgeMergeTol", 0.00006),
+                "integralAdjTol": self.app.state.get("integralAdjTol", 0.9),
+            }
+            command, working_folder, bash_script = self.runner.build_full_annulus_command(output_folder, tolerance_values)
 
-            if len(passages) > 2:
-                messagebox.showwarning(
-                    "Only Two-Passage Script Available",
-                    "This feature only supports 2 passages\n\n"
-                    "Found more than 2 — only passage0 and passage1 will be used"
+            if bash_script is None:
+                messagebox.showerror(
+                    "Full-Annulus Script Not Found",
+                    "Could not find passageMeshes/buildMesh_fullAnnulus.sh."
                 )
+                return
 
         if command is None:
             messagebox.showerror(
