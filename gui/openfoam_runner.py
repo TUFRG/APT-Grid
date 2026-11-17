@@ -31,6 +31,12 @@ class OpenFoamRunner:
             return os.path.abspath(candidate)
         return None
 
+    def find_full_annulus_script(self):
+        candidate = os.path.join(self.project_folder, "passageMeshes", "buildMesh_fullAnnulus.sh")
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+        return None
+
     def get_bash_working_folder(self, bash_script):
         script_name = os.path.basename(bash_script)
 
@@ -353,6 +359,113 @@ fi
 exit 0
 """.strip()
 
+    def wsl_full_annulus_shell_command(self, source_passage_meshes_folder, source_output_folder, tolerance_values):
+        source_passage_meshes_folder = source_passage_meshes_folder.replace("\\", "/")
+        source_output_folder = source_output_folder.replace("\\", "/")
+        point_merge_tol = tolerance_values.get("pointMergeTol", 0.7)
+        edge_merge_tol = tolerance_values.get("edgeMergeTol", 0.00006)
+        integral_adj_tol = tolerance_values.get("integralAdjTol", 0.9)
+
+        return rf"""
+
+if ! command -v blockMesh >/dev/null 2>&1; then
+    if [ -f "$HOME/.bashrc" ]; then
+        . "$HOME/.bashrc" || true
+    fi
+fi
+
+if ! command -v blockMesh >/dev/null 2>&1; then
+    if [ -f /usr/lib/openfoam/openfoam2412/etc/bashrc ]; then
+        . /usr/lib/openfoam/openfoam2412/etc/bashrc || true
+    elif [ -f /opt/openfoam12/etc/bashrc ]; then
+        . /opt/openfoam12/etc/bashrc || true
+    elif [ -f /usr/lib/openfoam/openfoam12/etc/bashrc ]; then
+        . /usr/lib/openfoam/openfoam12/etc/bashrc || true
+    fi
+fi
+
+if ! command -v blockMesh >/dev/null 2>&1; then
+    echo "[Error] blockMesh was not found after loading OpenFOAM."
+    exit 127
+fi
+
+set -e
+
+AG_RUN_ROOT="/tmp/AptGridOpenFOAM_aptgrid"
+SRC_PASSAGE_MESHES={self.shell_quote(source_passage_meshes_folder)}
+SRC_OUTPUT={self.shell_quote(source_output_folder)}
+
+rm -rf "$AG_RUN_ROOT"
+mkdir -p "$AG_RUN_ROOT/passageMeshes" "$AG_RUN_ROOT/outputData"
+
+cp -a "$SRC_PASSAGE_MESHES/." "$AG_RUN_ROOT/passageMeshes/"
+
+for d in "$SRC_OUTPUT"/passage*; do
+    if [ -d "$d" ]; then
+        cp -a "$d" "$AG_RUN_ROOT/outputData/"
+    fi
+done
+
+cd "$AG_RUN_ROOT/passageMeshes"
+echo "[OpenFOAM staging folder] $(pwd)"
+
+find . -name "*.sh" -exec sed -i 's/\r$//' {{}} \;
+mkdir -p template/constant/geometry template/system
+
+if [ -f template/system/blockMeshDict ]; then
+    sed -i 's/#eval{{\([^}}]*\)}}/#calc "\1"/g' template/system/blockMeshDict
+fi
+
+cp -a template "$AG_RUN_ROOT/template"
+
+if [ ! -f buildMesh_fullAnnulus.sh ]; then
+    echo "[Error] Missing buildMesh_fullAnnulus.sh in: $(pwd)"
+    exit 2
+fi
+
+unset FOAM_CASE
+export AG_POINT_MERGE_TOL={self.shell_quote(point_merge_tol)}
+export AG_EDGE_MERGE_TOL={self.shell_quote(edge_merge_tol)}
+export AG_INTEGRAL_ADJ_TOL={self.shell_quote(integral_adj_tol)}
+MESH_STATUS=0
+bash buildMesh_fullAnnulus.sh || MESH_STATUS=$?
+
+copy_plain_tree() {{
+    SRC_DIR="$1"
+    DST_DIR="$2"
+    if [ ! -d "$SRC_DIR" ]; then
+        return 0
+    fi
+    rm -rf "$DST_DIR"
+    mkdir -p "$DST_DIR"
+    (cd "$SRC_DIR" && find . -type d -print) | while IFS= read -r d; do
+        mkdir -p "$DST_DIR/$d"
+    done
+    (cd "$SRC_DIR" && find . -type f -print) | while IFS= read -r f; do
+        mkdir -p "$DST_DIR/$(dirname "$f")"
+        cat "$SRC_DIR/$f" > "$DST_DIR/$f"
+    done
+}}
+
+for CASE_DIR in passage*; do
+    if [ -d "$CASE_DIR" ]; then
+        echo "[Saving OpenFOAM case] $SRC_PASSAGE_MESHES/$CASE_DIR"
+        SRC_CASE="$AG_RUN_ROOT/passageMeshes/$CASE_DIR"
+        DEST_CASE="$SRC_PASSAGE_MESHES/$CASE_DIR"
+        mkdir -p "$DEST_CASE/constant"
+        copy_plain_tree "$SRC_CASE/constant/polyMesh" "$DEST_CASE/constant/polyMesh"
+        copy_plain_tree "$SRC_CASE/constant/geometry" "$DEST_CASE/constant/geometry"
+        copy_plain_tree "$SRC_CASE/system" "$DEST_CASE/system"
+    fi
+done
+
+echo "[Saved OpenFOAM cases] $SRC_PASSAGE_MESHES"
+if [ "$MESH_STATUS" -ne 0 ]; then
+    echo "[Warning] buildMesh_fullAnnulus.sh returned status $MESH_STATUS. Any generated case files were still saved."
+fi
+exit 0
+""".strip()
+
     def write_shell_script(self, shell_command, script_filename, output_folder):
         """Write a temporary shell script to output_folder and return its local path"""
         os.makedirs(output_folder, exist_ok=True)
@@ -407,6 +520,43 @@ exit 0
             output_folder.replace("\\", "/")
         )
         script_path = self.write_shell_script(shell_command, "aptgrid_openfoam_multipassage.sh", output_folder)
+        return ["bash", script_path], working_folder, bash_script
+
+    def build_full_annulus_command(self, output_folder, tolerance_values):
+        working_folder = self.get_passage_meshes_folder()
+        bash_script = self.find_full_annulus_script()
+
+        if bash_script is None:
+            return None, working_folder, None
+
+        if os.name == "nt":
+            if shutil.which("wsl"):
+                wsl_passage_meshes_folder = self.windows_to_wsl_path(working_folder)
+                wsl_output_folder = self.windows_to_wsl_path(output_folder)
+                shell_command = self.wsl_full_annulus_shell_command(
+                    wsl_passage_meshes_folder, wsl_output_folder, tolerance_values
+                )
+                wsl_script_path = self.write_wsl_shell_script(shell_command, "aptgrid_openfoam_full_annulus.sh", output_folder)
+                return ["wsl", "bash", wsl_script_path], working_folder, bash_script
+
+            bash_exe = shutil.which("bash")
+            if bash_exe:
+                shell_command = self.wsl_full_annulus_shell_command(
+                    working_folder.replace("\\", "/"),
+                    output_folder.replace("\\", "/"),
+                    tolerance_values
+                )
+                script_path = self.write_shell_script(shell_command, "aptgrid_openfoam_full_annulus.sh", output_folder)
+                return [bash_exe, script_path], working_folder, bash_script
+
+            return None, working_folder, bash_script
+
+        shell_command = self.wsl_full_annulus_shell_command(
+            working_folder.replace("\\", "/"),
+            output_folder.replace("\\", "/"),
+            tolerance_values
+        )
+        script_path = self.write_shell_script(shell_command, "aptgrid_openfoam_full_annulus.sh", output_folder)
         return ["bash", script_path], working_folder, bash_script
 
     def build_bash_command(self, bash_script, working_folder):
