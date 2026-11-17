@@ -15,8 +15,11 @@ Active development ongoing as of October 2026
 
 import sys
 import os
+import io
 import json
 import argparse
+import contextlib
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d, CubicSpline, splprep, splev
@@ -4116,151 +4119,49 @@ def get_curve_file_dimensions(curve_file_path):
     return n_sections, pts_per_section
 
 
-def main() -> int:
-    """ All the main blocks of the code get executed here """
+def _process_passage(a, ctx):
+    # Runs all per-passage geometry work for one passage; designed to be
+    # submitted to a ProcessPoolExecutor so passages build concurrently
+    Nb = ctx["Nb"]
+    STLoutput = ctx["STLoutput"]
+    additionalAxialRefine = ctx["additionalAxialRefine"]
+    additionalTangentialRefine = ctx["additionalTangentialRefine"]
+    angConstraintCurves = ctx["angConstraintCurves"]
+    angConstraintOffsets = ctx["angConstraintOffsets"]
+    bladeCurveFile = ctx["bladeCurveFile"]
+    bladeRes = ctx["bladeRes"]
+    cas = ctx["cas"]
+    dataPath = ctx["dataPath"]
+    dax1primeLE = ctx["dax1primeLE"]
+    dax1primeTE = ctx["dax1primeTE"]
+    delBla = ctx["delBla"]
+    delCas = ctx["delCas"]
+    delHub = ctx["delHub"]
+    dy1Bla = ctx["dy1Bla"]
+    dy1Cas = ctx["dy1Cas"]
+    dy1Hub = ctx["dy1Hub"]
+    gRad = ctx["gRad"]
+    gTan = ctx["gTan"]
+    hub = ctx["hub"]
+    mul = ctx["mul"]
+    nElementsPerVar = ctx["nElementsPerVar"]
+    nrad = ctx["nrad"]
+    outputPath = ctx["outputPath"]
+    passageRes = ctx["passageRes"]
+    passages = ctx["passages"]
+    percentVal = ctx["percentVal"]
+    percentValNonCutLE = ctx["percentValNonCutLE"]
+    percentValNonCutTE = ctx["percentValNonCutTE"]
+    periodic = ctx["periodic"]
+    rDnFar = ctx["rDnFar"]
+    rLE = ctx["rLE"]
+    rTE = ctx["rTE"]
+    rUpFar = ctx["rUpFar"]
+    res = ctx["res"]
+    scale = ctx["scale"]
 
-    """ INPUTS: """
-    config = load_gui_config()
-
-    dataPath = normalize_folder_path(config.get("dataPath", "../inputData/"))
-    hubFileName = file_name_only(config.get("hubFileName", "IGVHub_reformatted.curve"))
-    casFileName = file_name_only(config.get("casFileName", "IGVCasing_reformatted.curve"))
-    bladeCurveFile = file_name_only(config.get("bladeCurveFile", "IGVBlade.curve"))
-    outputPath = normalize_folder_path(config.get("outputPath", "../output/"))
-
-    Nb = get_int(config, "Nb", 20)
-    periodic = get_int(config, "periodic", 0)
-    if periodic !=0:
-        periodic =1
-
-    if periodic == 0:
-        stripped_bladeCurveFile = strip_aperiodic_blade_suffix(bladeCurveFile)
-        if stripped_bladeCurveFile != bladeCurveFile:
-            print(
-                f"[Info] bladeCurveFile '{bladeCurveFile}' looked like an indexed "
-                f"per-passage file; using shared prefix '{stripped_bladeCurveFile}' instead."
-            )
-        bladeCurveFile = stripped_bladeCurveFile
-
-    # Grid generation tuning parameters
-    percentVal = get_float(config, "percentVal", 0.04)
-    percentValNonCutLE = get_float(config, "percentValNonCutLE", 0.02)
-    percentValNonCutTE = get_float(config, "percentValNonCutTE", 0.00)
-    angConstraintCurves = get_float(config, "angConstraintCurves", 10)
-    angConstraintOffsets = get_float(config, "angConstraintOffsets", 1)
-
-    # Geometry definition inputs
-    scale = get_float(config, "scale", 0.001)
-
-    # Grid generation inputs
-    nrad = get_int(config, "nrad", 58)
-
-    # Boundary-layer reference inputs
-    rhoref = get_float(config, "rhoref", 1.2)
-    Uref = get_float(config, "Uref", 100.0)
-    LrefHub = get_float(config, "LrefHub", 388.0)
-    LrefCas = get_float(config, "LrefCas", 388.0)
-    LrefBla = get_float(config, "LrefBla", 35.0)
-    muref = get_float(config, "muref", 1.8e-5)
-    yPlusHub = get_float(config, "yPlusHub", 2)
-    yPlusCas = get_float(config, "yPlusCas", 2)
-    yPlusBla = get_float(config, "yPlusBla", 2)
-
-    autoBL = get_bool(config.get("autoBL", True), True)
-
-    if autoBL:
-        delHub = calcBLdelta(rhoref, Uref, LrefHub * scale, muref) / scale
-        delCas = calcBLdelta(rhoref, Uref, LrefCas * scale, muref) / scale
-        delBla = calcBLdelta(rhoref, Uref, LrefBla * scale, muref) / scale
-        dy1Hub = calcFirstCellSize(rhoref, Uref, LrefHub * scale, muref, yPlusHub) / scale
-        dy1Cas = calcFirstCellSize(rhoref, Uref, LrefCas * scale, muref, yPlusCas) / scale
-        dy1Bla = calcFirstCellSize(rhoref, Uref, LrefBla * scale, muref, yPlusBla) / scale
-    else:
-        delHub = get_float(config, "delHub", calcBLdelta(rhoref, Uref, LrefHub * scale, muref) / scale)
-        delCas = get_float(config, "delCas", calcBLdelta(rhoref, Uref, LrefCas * scale, muref) / scale)
-        delBla = get_float(config, "delBla", calcBLdelta(rhoref, Uref, LrefBla * scale, muref) / scale)
-        dy1Hub = get_float(config, "dy1Hub", calcFirstCellSize(rhoref, Uref, LrefHub * scale, muref, yPlusHub) / scale)
-        dy1Cas = get_float(config, "dy1Cas", calcFirstCellSize(rhoref, Uref, LrefCas * scale, muref, yPlusCas) / scale)
-        dy1Bla = get_float(config, "dy1Bla", calcFirstCellSize(rhoref, Uref, LrefBla * scale, muref, yPlusBla) / scale)
-
-    # Mesh tuning inputs
-    gRad = get_float(config, "gRad", 2)
-    gTan = get_float(config, "gTan", 2)
-    additionalTangentialRefine = get_int(config, "additionalTangentialRefine", 3)
-    dax1primeLE = get_float(config, "dax1primeLE", 0.003)
-    rLE = get_float(config, "rLE", 1.25)
-    dax1primeTE = get_float(config, "dax1primeTE", 0.002)
-    rTE = get_float(config, "rTE", 1.25)
-    additionalAxialRefine = get_int(config, "additionalAxialRefine", 4)
-    rUpFar = get_float(config, "rUpFar", 1.1)
-    rDnFar = get_float(config, "rDnFar", 1.1)
-
-    STLoutput = get_bool(config.get("STLoutput", True), True)
-
-    print("Using run settings from GUI/config:")
-    print(f"  dataPath: {dataPath}")
-    print(f"  hubFileName: {hubFileName}")
-    print(f"  casFileName: {casFileName}")
-    print(f"  bladeCurveFile: {bladeCurveFile}")
-    print(f"  outputPath: {outputPath}")
-    print(f"  Nb: {Nb}")
-    print(f"  periodic: {periodic}")
-    print(f"  scale: {scale}")
-    print(f"  nrad: {nrad}")
-    print(f"  STLoutput: {STLoutput}")
-    """ END INPUTS """
-
-    # STL definition inputs, typically do not need to be modified:
-    res = 30  # upstream and downstream extention resolution
-    passageRes = 360  # Resolution of points for a single passage
-    bladeRes = 400  # Increase resolution of underlying blade data
-    mul = 5  # Additional factor of extra points when refining extensions
-
-    # Numerical solution initial-guess-finding parameter
-    # Tpically does not need to be modified
-    nElementsPerVar = 20
-
-    """
-    Description of input data format:
-    - basically consistent with NAX/Turbogrid format (.curve files)
-    - all blades in a row must be specified by the same number of sections
-    - hub/casing specified as 2 or 3 column segs of space- or comma-separated numbers, if 2 col,
-        interpret as R and Z; if 3 col, interpret as X, Y, Z and compute R as sqrt(X**2 + Y**2)
-    - blades: one file per blade. 3 col space- or comma-separated format, XYZ coordinates. A blank line
-        separates each profile/section. Optionally have comment lines which start with "#" which
-        are ignored. Each profile must be a closed loop of points, i.e. the first and last point
-        must be identical. Doesn't matter if this is the LE or TE. The other end must also be
-        repeated.
-    """
-
-    # Determine operation mode -- single passage or periodic sector
-    if periodic == 1:
-        passages = 1
-        print('Operating in periodic blade row mode. Producing grid inputs for a single passage.')
-    elif periodic == 0:
-        # For periodic sector, get number of passages in sector
-        passages = Nb
-        gridParamArray = np.empty(Nb, dtype=object)
-        print(f'Operating in aperiodic blade row mode. Producing grid inputs for {Nb} passages.')
-
-    # Load hub/casing data
-    with open(dataPath + hubFileName, 'rb') as f:
-        clean_lines = (line.replace(b' ',b',') for line in f)
-        hub = np.genfromtxt(clean_lines, delimiter=',', comments='#')
-    with open(dataPath + casFileName, 'rb') as f:
-        clean_lines = (line.replace(b' ',b',') for line in f)
-        cas = np.genfromtxt(clean_lines, delimiter=',', comments='#')
-    # check for format and adjust as necessary
-    if hub.shape[1]==3:
-        hub[:,0] = np.sqrt(hub[:,0]**2 + hub[:,1]**2)
-        hub = np.delete(hub, 1, axis=1)
-    if cas.shape[1]==3:
-        cas[:,0] = np.sqrt(cas[:,0]**2 + cas[:,1]**2)
-        cas = np.delete(cas, 1, axis=1)
-    # now the hub and cas arrays are in R,Z
-
-    # For periodic sector, loop over passages; make a set of outputs for each
-    for a in range(passages):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
         # Start individual passage work
         print(f'Doing main operations for passage {a}')
         blade1num = a
@@ -4613,8 +4514,7 @@ def main() -> int:
         # Calculate grid/grading parameters and write passageParameters file
         print('Computing and writing parameters for passage {}'.format(a))
         upDnBlockGridParams = calcAndWritePassageParameters(scale, Xvalues, Yvalues, Zvalues, nrad, delHub, delCas, delBla, dy1Hub, dy1Cas, dy1Bla, gRad, gTan, dax1primeLE, rLE, dax1primeTE, rTE, rUpFar, rDnFar, outputPath, a, additionalTangentialRefine, additionalAxialRefine, blade2hubUpArclenmap, blade1hubUpArclenmap, blade2casUpArclenmap, blade1casUpArclenmap, blade2hubDnArclenmap, blade1hubDnArclenmap, blade2casDnArclenmap, blade1casDnArclenmap, nElementsPerVar)
-        if(not periodic):
-            gridParamArray[a] = upDnBlockGridParams
+        result = upDnBlockGridParams if (not periodic) else None
 
         if(STLoutput):
             # Define/write STLs
@@ -4622,6 +4522,176 @@ def main() -> int:
             createSTLs(Xvalues, Yvalues, Zvalues, outputPath, a)
         else:
             print('STL output disabled.')
+
+    return a, result, buf.getvalue()
+
+
+def main() -> int:
+    """ All the main blocks of the code get executed here """
+
+    """ INPUTS: """
+    config = load_gui_config()
+
+    dataPath = normalize_folder_path(config.get("dataPath", "../inputData/"))
+    hubFileName = file_name_only(config.get("hubFileName", "IGVHub_reformatted.curve"))
+    casFileName = file_name_only(config.get("casFileName", "IGVCasing_reformatted.curve"))
+    bladeCurveFile = file_name_only(config.get("bladeCurveFile", "IGVBlade.curve"))
+    outputPath = normalize_folder_path(config.get("outputPath", "../output/"))
+
+    Nb = get_int(config, "Nb", 20)
+    periodic = get_int(config, "periodic", 0)
+    if periodic !=0:
+        periodic =1
+
+    if periodic == 0:
+        stripped_bladeCurveFile = strip_aperiodic_blade_suffix(bladeCurveFile)
+        if stripped_bladeCurveFile != bladeCurveFile:
+            print(
+                f"[Info] bladeCurveFile '{bladeCurveFile}' looked like an indexed "
+                f"per-passage file; using shared prefix '{stripped_bladeCurveFile}' instead."
+            )
+        bladeCurveFile = stripped_bladeCurveFile
+
+    # Grid generation tuning parameters
+    percentVal = get_float(config, "percentVal", 0.04)
+    percentValNonCutLE = get_float(config, "percentValNonCutLE", 0.02)
+    percentValNonCutTE = get_float(config, "percentValNonCutTE", 0.00)
+    angConstraintCurves = get_float(config, "angConstraintCurves", 10)
+    angConstraintOffsets = get_float(config, "angConstraintOffsets", 1)
+
+    # Geometry definition inputs
+    scale = get_float(config, "scale", 0.001)
+
+    # Grid generation inputs
+    nrad = get_int(config, "nrad", 58)
+
+    # Boundary-layer reference inputs
+    rhoref = get_float(config, "rhoref", 1.2)
+    Uref = get_float(config, "Uref", 100.0)
+    LrefHub = get_float(config, "LrefHub", 388.0)
+    LrefCas = get_float(config, "LrefCas", 388.0)
+    LrefBla = get_float(config, "LrefBla", 35.0)
+    muref = get_float(config, "muref", 1.8e-5)
+    yPlusHub = get_float(config, "yPlusHub", 2)
+    yPlusCas = get_float(config, "yPlusCas", 2)
+    yPlusBla = get_float(config, "yPlusBla", 2)
+
+    autoBL = get_bool(config.get("autoBL", True), True)
+
+    if autoBL:
+        delHub = calcBLdelta(rhoref, Uref, LrefHub * scale, muref) / scale
+        delCas = calcBLdelta(rhoref, Uref, LrefCas * scale, muref) / scale
+        delBla = calcBLdelta(rhoref, Uref, LrefBla * scale, muref) / scale
+        dy1Hub = calcFirstCellSize(rhoref, Uref, LrefHub * scale, muref, yPlusHub) / scale
+        dy1Cas = calcFirstCellSize(rhoref, Uref, LrefCas * scale, muref, yPlusCas) / scale
+        dy1Bla = calcFirstCellSize(rhoref, Uref, LrefBla * scale, muref, yPlusBla) / scale
+    else:
+        delHub = get_float(config, "delHub", calcBLdelta(rhoref, Uref, LrefHub * scale, muref) / scale)
+        delCas = get_float(config, "delCas", calcBLdelta(rhoref, Uref, LrefCas * scale, muref) / scale)
+        delBla = get_float(config, "delBla", calcBLdelta(rhoref, Uref, LrefBla * scale, muref) / scale)
+        dy1Hub = get_float(config, "dy1Hub", calcFirstCellSize(rhoref, Uref, LrefHub * scale, muref, yPlusHub) / scale)
+        dy1Cas = get_float(config, "dy1Cas", calcFirstCellSize(rhoref, Uref, LrefCas * scale, muref, yPlusCas) / scale)
+        dy1Bla = get_float(config, "dy1Bla", calcFirstCellSize(rhoref, Uref, LrefBla * scale, muref, yPlusBla) / scale)
+
+    # Mesh tuning inputs
+    gRad = get_float(config, "gRad", 2)
+    gTan = get_float(config, "gTan", 2)
+    additionalTangentialRefine = get_int(config, "additionalTangentialRefine", 3)
+    dax1primeLE = get_float(config, "dax1primeLE", 0.003)
+    rLE = get_float(config, "rLE", 1.25)
+    dax1primeTE = get_float(config, "dax1primeTE", 0.002)
+    rTE = get_float(config, "rTE", 1.25)
+    additionalAxialRefine = get_int(config, "additionalAxialRefine", 4)
+    rUpFar = get_float(config, "rUpFar", 1.1)
+    rDnFar = get_float(config, "rDnFar", 1.1)
+
+    STLoutput = get_bool(config.get("STLoutput", True), True)
+
+    print("Using run settings from GUI/config:")
+    print(f"  dataPath: {dataPath}")
+    print(f"  hubFileName: {hubFileName}")
+    print(f"  casFileName: {casFileName}")
+    print(f"  bladeCurveFile: {bladeCurveFile}")
+    print(f"  outputPath: {outputPath}")
+    print(f"  Nb: {Nb}")
+    print(f"  periodic: {periodic}")
+    print(f"  scale: {scale}")
+    print(f"  nrad: {nrad}")
+    print(f"  STLoutput: {STLoutput}")
+    """ END INPUTS """
+
+    # STL definition inputs, typically do not need to be modified:
+    res = 30  # upstream and downstream extention resolution
+    passageRes = 360  # Resolution of points for a single passage
+    bladeRes = 400  # Increase resolution of underlying blade data
+    mul = 5  # Additional factor of extra points when refining extensions
+
+    # Numerical solution initial-guess-finding parameter
+    # Tpically does not need to be modified
+    nElementsPerVar = 20
+
+    """
+    Description of input data format:
+    - basically consistent with NAX/Turbogrid format (.curve files)
+    - all blades in a row must be specified by the same number of sections
+    - hub/casing specified as 2 or 3 column segs of space- or comma-separated numbers, if 2 col,
+        interpret as R and Z; if 3 col, interpret as X, Y, Z and compute R as sqrt(X**2 + Y**2)
+    - blades: one file per blade. 3 col space- or comma-separated format, XYZ coordinates. A blank line
+        separates each profile/section. Optionally have comment lines which start with "#" which
+        are ignored. Each profile must be a closed loop of points, i.e. the first and last point
+        must be identical. Doesn't matter if this is the LE or TE. The other end must also be
+        repeated.
+    """
+
+    # Determine operation mode -- single passage or periodic sector
+    if periodic == 1:
+        passages = 1
+        print('Operating in periodic blade row mode. Producing grid inputs for a single passage.')
+    elif periodic == 0:
+        # For periodic sector, get number of passages in sector
+        passages = Nb
+        gridParamArray = np.empty(Nb, dtype=object)
+        print(f'Operating in aperiodic blade row mode. Producing grid inputs for {Nb} passages.')
+
+    # Load hub/casing data
+    with open(dataPath + hubFileName, 'rb') as f:
+        clean_lines = (line.replace(b' ',b',') for line in f)
+        hub = np.genfromtxt(clean_lines, delimiter=',', comments='#')
+    with open(dataPath + casFileName, 'rb') as f:
+        clean_lines = (line.replace(b' ',b',') for line in f)
+        cas = np.genfromtxt(clean_lines, delimiter=',', comments='#')
+    # check for format and adjust as necessary
+    if hub.shape[1]==3:
+        hub[:,0] = np.sqrt(hub[:,0]**2 + hub[:,1]**2)
+        hub = np.delete(hub, 1, axis=1)
+    if cas.shape[1]==3:
+        cas[:,0] = np.sqrt(cas[:,0]**2 + cas[:,1]**2)
+        cas = np.delete(cas, 1, axis=1)
+    # now the hub and cas arrays are in R,Z
+
+    # For periodic sector, loop over passages; make a set of outputs for each
+    ctx = {k: locals()[k] for k in [
+        "Nb", "STLoutput", "additionalAxialRefine", "additionalTangentialRefine",
+        "angConstraintCurves", "angConstraintOffsets", "bladeCurveFile", "bladeRes",
+        "cas", "dataPath", "dax1primeLE", "dax1primeTE", "delBla", "delCas", "delHub",
+        "dy1Bla", "dy1Cas", "dy1Hub", "gRad", "gTan", "hub", "mul", "nElementsPerVar",
+        "nrad", "outputPath", "passageRes", "passages", "percentVal",
+        "percentValNonCutLE", "percentValNonCutTE", "periodic", "rDnFar", "rLE",
+        "rTE", "rUpFar", "res", "scale",
+    ]}
+
+    with ProcessPoolExecutor() as executor:
+        futures = {executor.submit(_process_passage, a, ctx): a for a in range(passages)}
+        try:
+            for future in as_completed(futures):
+                finished_a, result, log = future.result()
+                sys.stdout.write(log)
+                if not periodic:
+                    gridParamArray[finished_a] = result
+        except Exception:
+            for f in futures:
+                f.cancel()
+            raise
 
     # Ensure consistency for upstream/downstream blocks
     # for aperiodic cases
