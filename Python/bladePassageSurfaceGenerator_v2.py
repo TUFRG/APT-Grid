@@ -4607,6 +4607,10 @@ def main() -> int:
 
     STLoutput = get_bool(config.get("STLoutput", True), True)
 
+    maxCores = get_int(config, "maxCores", 0)
+    if maxCores < 1 or maxCores > os.cpu_count():
+        maxCores = os.cpu_count()
+
     print("Using run settings from GUI/config:")
     print(f"  dataPath: {dataPath}")
     print(f"  hubFileName: {hubFileName}")
@@ -4618,6 +4622,7 @@ def main() -> int:
     print(f"  scale: {scale}")
     print(f"  nrad: {nrad}")
     print(f"  STLoutput: {STLoutput}")
+    print(f"  maxCores: {maxCores}")
     """ END INPUTS """
 
     # STL definition inputs, typically do not need to be modified:
@@ -4680,7 +4685,7 @@ def main() -> int:
         "rTE", "rUpFar", "res", "scale",
     ]}
 
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=maxCores) as executor:
         futures = {executor.submit(_process_passage, a, ctx): a for a in range(passages)}
         try:
             for future in as_completed(futures):

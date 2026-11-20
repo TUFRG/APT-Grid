@@ -359,7 +359,7 @@ fi
 exit 0
 """.strip()
 
-    def wsl_full_annulus_shell_command(self, source_passage_meshes_folder, source_output_folder, tolerance_values):
+    def wsl_full_annulus_shell_command(self, source_passage_meshes_folder, source_output_folder, tolerance_values, max_cores):
         source_passage_meshes_folder = source_passage_meshes_folder.replace("\\", "/")
         source_output_folder = source_output_folder.replace("\\", "/")
         point_merge_tol = tolerance_values.get("pointMergeTol", 0.7)
@@ -427,6 +427,7 @@ unset FOAM_CASE
 export AG_POINT_MERGE_TOL={self.shell_quote(point_merge_tol)}
 export AG_EDGE_MERGE_TOL={self.shell_quote(edge_merge_tol)}
 export AG_INTEGRAL_ADJ_TOL={self.shell_quote(integral_adj_tol)}
+export AG_MAX_CORES={self.shell_quote(max_cores)}
 MESH_STATUS=0
 bash buildMesh_fullAnnulus.sh || MESH_STATUS=$?
 
@@ -522,7 +523,7 @@ exit 0
         script_path = self.write_shell_script(shell_command, "aptgrid_openfoam_multipassage.sh", output_folder)
         return ["bash", script_path], working_folder, bash_script
 
-    def build_full_annulus_command(self, output_folder, tolerance_values):
+    def build_full_annulus_command(self, output_folder, tolerance_values, max_cores):
         working_folder = self.get_passage_meshes_folder()
         bash_script = self.find_full_annulus_script()
 
@@ -534,7 +535,7 @@ exit 0
                 wsl_passage_meshes_folder = self.windows_to_wsl_path(working_folder)
                 wsl_output_folder = self.windows_to_wsl_path(output_folder)
                 shell_command = self.wsl_full_annulus_shell_command(
-                    wsl_passage_meshes_folder, wsl_output_folder, tolerance_values
+                    wsl_passage_meshes_folder, wsl_output_folder, tolerance_values, max_cores
                 )
                 wsl_script_path = self.write_wsl_shell_script(shell_command, "aptgrid_openfoam_full_annulus.sh", output_folder)
                 return ["wsl", "bash", wsl_script_path], working_folder, bash_script
@@ -544,7 +545,8 @@ exit 0
                 shell_command = self.wsl_full_annulus_shell_command(
                     working_folder.replace("\\", "/"),
                     output_folder.replace("\\", "/"),
-                    tolerance_values
+                    tolerance_values,
+                    max_cores
                 )
                 script_path = self.write_shell_script(shell_command, "aptgrid_openfoam_full_annulus.sh", output_folder)
                 return [bash_exe, script_path], working_folder, bash_script
@@ -554,7 +556,8 @@ exit 0
         shell_command = self.wsl_full_annulus_shell_command(
             working_folder.replace("\\", "/"),
             output_folder.replace("\\", "/"),
-            tolerance_values
+            tolerance_values,
+            max_cores
         )
         script_path = self.write_shell_script(shell_command, "aptgrid_openfoam_full_annulus.sh", output_folder)
         return ["bash", script_path], working_folder, bash_script

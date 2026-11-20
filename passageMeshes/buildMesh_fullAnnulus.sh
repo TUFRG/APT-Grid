@@ -27,7 +27,7 @@ build_passage_mesh() {
 export -f build_passage_mesh
 
 echo 'Creating meshes for each passage...'
-seq 0 "$passagem1" | xargs -n 1 -P "$(nproc)" -I {} bash -c 'build_passage_mesh "$@"' _ {}
+seq 0 "$passagem1" | xargs -P "${AG_MAX_CORES:-$(nproc)}" -I {} bash -c 'build_passage_mesh "$@"' _ {}
 echo 'All passage meshes created!'
 echo ' '
 cd passage0

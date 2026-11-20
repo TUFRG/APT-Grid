@@ -23,6 +23,7 @@ SECOND_LOGO_FILENAME = "second_logo.png"
 SIDEBAR_BG = "#eef7ff"
 CONTENT_BG = "#f8fbff"
 MAIN_BLUE = "#005298"
+AVAILABLE_CORES = os.cpu_count() or 1
 
 
 PARAMETER_HELP_TEXT = {
@@ -73,6 +74,9 @@ PARAMETER_HELP_TEXT = {
     "pointMergeTol": "How close two points from adjacent passages need to be (relative to local edge length) to be merged into one, when stitching the full annulus together.",
     "edgeMergeTol": "How close two edges from adjacent passages need to be to be merged into one, when stitching the full annulus together.",
     "integralAdjTol": "How far a matched point can be adjusted when snapping adjacent passage meshes together during stitching.",
+
+    # Run
+    "maxCores": "Maximum number of CPU cores used to generate passages and build passage meshes at the same time. Lower this to keep the computer responsive or to leave cores free on a shared machine.",
 }
 
 
@@ -206,6 +210,9 @@ class AppState:
             "pointMergeTol": 0.7,
             "edgeMergeTol": 0.00006,
             "integralAdjTol": 0.9,
+
+            # Run
+            "maxCores": AVAILABLE_CORES,
         }
 
         self.values = self.defaults.copy()
@@ -230,7 +237,7 @@ class AppState:
         ])
 
     def reset_basic_setup(self):
-        self.reset_group(["Nb", "periodic", "scale", "nrad", "STLoutput"])
+        self.reset_group(["Nb", "periodic", "scale", "nrad"])
 
     def reset_boundary_layer(self):
         self.reset_group([
@@ -1471,10 +1478,12 @@ class RunPage(BasePage):
         self.runner = OpenFoamRunner(project_folder)
 
         self.stl_output_var = tk.IntVar()
+        self.max_cores_var = tk.IntVar()
 
         self.build_page()
         self.load_state()
         self.stl_output_var.trace_add("write", self.update_stl_output)
+        self.max_cores_var.trace_add("write", self.update_max_cores)
 
         self.append_console("[Ready] Configure inputs, then run mesh generation.\n")
 
@@ -1511,7 +1520,7 @@ class RunPage(BasePage):
         run_description.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
 
         stl_output_frame = tk.Frame(run_card, bg="white")
-        stl_output_frame.grid(row=2, column=0, sticky="w", padx=24, pady=(0, 18))
+        stl_output_frame.grid(row=2, column=0, sticky="w", padx=24, pady=(0, 10))
 
         ttk.Checkbutton(
             stl_output_frame,
@@ -1535,6 +1544,50 @@ class RunPage(BasePage):
         stl_output_help_icon.create_text(7, 7, text="?", fill="#5f7ea8", font=("Segoe UI", 7, "bold"))
         stl_output_help_icon.grid(row=0, column=1, sticky="w", padx=(5, 0))
         ParameterHelp(stl_output_help_icon, "Write STL files", PARAMETER_HELP_TEXT.get("STLoutput", ""))
+
+        max_cores_frame = tk.Frame(run_card, bg="white")
+        max_cores_frame.grid(row=3, column=0, sticky="w", padx=24, pady=(0, 18))
+
+        tk.Label(
+            max_cores_frame,
+            text="CPU cores to use",
+            font=("Segoe UI", 10),
+            fg="#1f2933",
+            bg="white"
+        ).grid(row=0, column=0, sticky="w", padx=(0, 10))
+
+        max_cores_spinbox = ttk.Spinbox(
+            max_cores_frame,
+            from_=1,
+            to=AVAILABLE_CORES,
+            increment=1,
+            textvariable=self.max_cores_var,
+            width=6,
+            takefocus=False
+        )
+        max_cores_spinbox.grid(row=0, column=1, sticky="w")
+
+        tk.Label(
+            max_cores_frame,
+            text=f"of {AVAILABLE_CORES} available",
+            font=("Segoe UI", 10),
+            fg="#4d5f73",
+            bg="white"
+        ).grid(row=0, column=2, sticky="w", padx=(8, 0))
+
+        max_cores_help_icon = tk.Canvas(
+            max_cores_frame,
+            width=14,
+            height=14,
+            bg="white",
+            highlightthickness=0,
+            bd=0,
+            cursor="hand2"
+        )
+        max_cores_help_icon.create_oval(1, 1, 13, 13, fill="white", outline="#9bb7d4", width=1)
+        max_cores_help_icon.create_text(7, 7, text="?", fill="#5f7ea8", font=("Segoe UI", 7, "bold"))
+        max_cores_help_icon.grid(row=0, column=3, sticky="w", padx=(5, 0))
+        ParameterHelp(max_cores_help_icon, "CPU cores to use", PARAMETER_HELP_TEXT.get("maxCores", ""))
 
         button_frame = tk.Frame(run_card, bg="white")
         button_frame.grid(row=0, column=1, rowspan=2, sticky="e", padx=24, pady=18)
@@ -1667,12 +1720,20 @@ class RunPage(BasePage):
 
     def load_state(self):
         self.stl_output_var.set(int(self.app.state.get("STLoutput", 1)))
+        self.max_cores_var.set(int(self.app.state.get("maxCores", AVAILABLE_CORES)))
 
     def update_stl_output(self, *args):
         try:
             self.app.state.set("STLoutput", int(self.stl_output_var.get()))
         except tk.TclError:
             pass
+
+    def update_max_cores(self, *args):
+        try:
+            cores = int(self.max_cores_var.get())
+        except tk.TclError:
+            return
+        self.app.state.set("maxCores", max(1, min(cores, AVAILABLE_CORES)))
 
     def append_console(self, text):
         self.console.insert("end", text)
@@ -1907,7 +1968,8 @@ class RunPage(BasePage):
                 "edgeMergeTol": self.app.state.get("edgeMergeTol", 0.00006),
                 "integralAdjTol": self.app.state.get("integralAdjTol", 0.9),
             }
-            command, working_folder, bash_script = self.runner.build_full_annulus_command(output_folder, tolerance_values)
+            max_cores = self.app.state.get("maxCores", AVAILABLE_CORES)
+            command, working_folder, bash_script = self.runner.build_full_annulus_command(output_folder, tolerance_values, max_cores)
 
             if bash_script is None:
                 messagebox.showerror(
