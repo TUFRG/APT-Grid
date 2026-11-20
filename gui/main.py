@@ -1528,7 +1528,8 @@ class RunPage(BasePage):
             variable=self.stl_output_var,
             onvalue=1,
             offvalue=0,
-            takefocus=False
+            takefocus=False,
+            style="Card.TCheckbutton"
         ).grid(row=0, column=0, sticky="w")
 
         stl_output_help_icon = tk.Canvas(
@@ -1550,9 +1551,9 @@ class RunPage(BasePage):
 
         tk.Label(
             max_cores_frame,
-            text="CPU cores to use",
+            text="CPU cores:",
             font=("Segoe UI", 10),
-            fg="#1f2933",
+            fg="black",
             bg="white"
         ).grid(row=0, column=0, sticky="w", padx=(0, 10))
 
@@ -1587,7 +1588,7 @@ class RunPage(BasePage):
         max_cores_help_icon.create_oval(1, 1, 13, 13, fill="white", outline="#9bb7d4", width=1)
         max_cores_help_icon.create_text(7, 7, text="?", fill="#5f7ea8", font=("Segoe UI", 7, "bold"))
         max_cores_help_icon.grid(row=0, column=3, sticky="w", padx=(5, 0))
-        ParameterHelp(max_cores_help_icon, "CPU cores to use", PARAMETER_HELP_TEXT.get("maxCores", ""))
+        ParameterHelp(max_cores_help_icon, "CPU cores", PARAMETER_HELP_TEXT.get("maxCores", ""))
 
         button_frame = tk.Frame(run_card, bg="white")
         button_frame.grid(row=0, column=1, rowspan=2, sticky="e", padx=24, pady=18)
@@ -2175,6 +2176,8 @@ class AptGridApp(tk.Tk):
         style.configure("TEntry", padding=6)
         style.configure("TSpinbox", padding=5)
         style.configure("TCheckbutton", background=CONTENT_BG, font=("Segoe UI", 10))
+        style.configure("Card.TCheckbutton", background="white")
+        style.map("Card.TCheckbutton", background=[("active", "white")])
         style.configure("TSeparator", background="#c8dcf4")
 
     def _build_layout(self):
